@@ -1,0 +1,49 @@
+# For most projects, this workflow file will not need changing; you simply need
+# to commit it to your repository.
+#
+# For more information see: 
+#     https://nasa-ammos.github.io/slim/docs/guides/software-lifecycle/application-starter-kits/python-starter-kit/
+#
+# ******** NOTE ********
+# This file publishes to TestPyPi. To enable public PyPi the repository flag 
+# must be removed from the Twine upload call in the "Publish package" block.
+#
+name: "Upload Python Package"
+
+on:
+  release:
+    branches: [main]
+    types: [published]
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+      security-events: write
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    - name: Upgrade tooling
+      run: |
+        python3 -m pip install --upgrade pip
+        pip3 install --upgrade build setuptools setuptools_scm[toml] twine wheel
+    - name: Build package
+      run: |
+        python3 -m build --wheel
+        python3 setup.py sdist --format=zip
+    - name: Publish package
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+      run: |
+        twine check dist/*
+        twine upload --repository testpypi --verbose dist/*.whl dist/*.zip
