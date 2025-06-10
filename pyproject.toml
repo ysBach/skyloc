@@ -1,14 +1,53 @@
 [build-system]
 requires = [
-    "importlib-metadata>=3.6;python_version<='3.7'",
-    "setuptools>=62.6",
-    "setuptools_scm[toml]>=6.4.2",
-    "wheel>=0.37.1",
+    "setuptools>=61.0",
+    "setuptools_scm",
 ]
 build-backend = "setuptools.build_meta"
 
+
+[project]
+name = "ssoloc"
+dynamic = ["version"]
+authors = [
+    { name = "ysBach", email = "ysbach93@gmail.com" },
+]
+description = "Convenience tools related to Solar System Objects (SSO) locator (e.g., apparent position and movements) for general purposes."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+keywords = []
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy",
+    "numba",
+    "pandas",
+    "astropy",
+    "spiceypy",
+    "kete",
+]
+
+
 [tool.setuptools_scm]
-# [MODIFY FOR YOUR PROJECT] ###################################################
-write_to = "slim_sample_project/version.py"
-# [END MODIFY FOR YOUR PROJECT] ##############################################
-write_to_template = "__version__ = '{version}'\n"
+write_to = "src/ssoloc/_version.py"
+
+[project.urls]
+Homepage = "https://github.com/ysBach/ssoloc"
+# Documentation = "https://github.com/ysBach/ssoloc"
+Repository = "https://github.com/ysBach/ssoloc"
+"Bug Tracker" = "https://github.com/ysBach/ssoloc/issues"
+# Changelog = "https://github.com/ysBach/ssoloc/CHANGELOG.md"
+
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = ["-ra", "--showlocals", "--strict-markers", "--strict-config"]
+xfail_strict = true
+# filterwarnings = ["error"]  # fails for astropy as of version 5.
+# log_cli_level = "info"
+testpaths = [
+  "tests",
+]
