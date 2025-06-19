@@ -14,6 +14,7 @@ DEGPERDAY2ARCSECPERMIN = 3600 / (24 * 60)
 
 def make_nongravs_models(
     orb,
+    m_ng=None,
     c_a1="A1",
     c_a2="A2",
     c_a3="A3",
@@ -23,6 +24,11 @@ def make_nongravs_models(
     m=2.15,
     n=5.093,
     k=4.6142,
+    c_alpha="alpha",
+    c_r0="r_0",
+    c_m="m",
+    c_n="n",
+    c_k="k",
 ):
     """Create a list of non-gravitational models for the objects in the orbit file.
 
@@ -31,13 +37,25 @@ def make_nongravs_models(
     orb : pd.DataFrame
         Orbit file with columns of orbital elements.
 
+    m_ng : bool, array-like of bool, optional
+        A boolean mask indicating which objects have non-gravitational
+        parameters. If not provided, it will be calculated based on the
+        columns `c_a1`, `c_a2`, `c_a3`, and `c_dt` (mask is `True` when any
+        of these columns is not zero).
+
     c_a1, c_a2, c_a3, c_dt : str, optional
         Column names in the orbit file for the non-gravitational parameters.
         Default is "A1", "A2", "A3", and "DT".
 
+    c_alpha, c_r0, c_m, c_n, c_k : str, optional
+        Column names in the orbit file for the non-gravitational model
+        parameters `r_0`, `m`, `n`, and `k`, respectively.
+
     alpha, r_0, m, n, k : float or array-like, optional
-        Parameters for the non-gravitational model. Can be scalars or array-like
-        (length matching orb). Default values are taken from JPL Horizons documentation.
+        Default parameters for the non-gravitational model. If `orb` contains
+        columns for these (`c_alpha`, `c_r0`, `c_m`, `c_n`, `c_k`), the
+        values will be used as `.fillna()` defaults if scalar or `orb[col] =
+        value` if array-like.
 
     Returns
     -------
@@ -49,39 +67,53 @@ def make_nongravs_models(
     # Broadcast parameters to match orb length if needed
     nobj = len(orb)
 
-    def get_param(param):
-        if np.ndim(param) == 0:
-            return [param] * nobj
-        arr = np.asarray(param)
-        if arr.shape[0] != nobj:
-            raise ValueError(
-                f"Parameter length {arr.shape[0]} does not match number of objects {nobj}"
-            )
-        return arr
+    if m_ng is None:  # If not provided...
+        m_ng = (
+            (orb[c_a1] != 0.0)
+            | (orb[c_a2] != 0.0)
+            | (orb[c_a3] != 0.0)
+            | (orb[c_dt] != 0.0)
+        )
 
-    alpha_arr = get_param(alpha)
-    r_0_arr = get_param(r_0)
-    m_arr = get_param(m)
-    n_arr = get_param(n)
-    k_arr = get_param(k)
+    if isinstance(m_ng, bool):
+        m_ng = np.array([m_ng] * nobj)
+    else:  # must be array-like of bool
+        m_ng = np.asarray(m_ng, dtype=bool)  # avoid copy if possible
+        if len(m_ng) != nobj:
+            raise ValueError(f"{len(m_ng)=} does not match number of objects {nobj}")
 
-    non_gravs = []
-    for i, (_, row) in enumerate(orb.iterrows()):
-        if row[c_a1] is None or row[c_a2] is None or row[c_a3] is None:
-            non_gravs.append(None)
-        else:
-            ng = kete.propagation.NonGravModel.new_comet(
-                a1=row[c_a1],
-                a2=row[c_a2],
-                a3=row[c_a3],
-                dt=row[c_dt],
-                alpha=alpha_arr[i],
-                r_0=r_0_arr[i],
-                m=m_arr[i],
-                n=n_arr[i],
-                k=k_arr[i],
-            )
-            non_gravs.append(ng)
+    def _set_nongrav_col(df, colname, value):
+        """Set the column in the orbit DataFrame to the value."""
+        if colname in orb.columns:
+            # If scalar value
+            df[colname] = df[colname].fillna(value)
+        else:  # If the column does not exist in the DataFrame,
+            # Fill with scalar or array value
+            df[colname] = value
+
+    orb_ng = orb.loc[m_ng].copy()
+    for col, val in zip(
+        [c_alpha, c_r0, c_m, c_n, c_k],
+        [alpha, r_0, m, n, k],
+    ):
+        _set_nongrav_col(orb_ng, col, val)
+
+    non_gravs = np.array([None] * nobj)
+
+    for i, (_, row) in zip(np.where(m_ng)[0], orb_ng.iterrows()):
+        ng = kete.propagation.NonGravModel.new_comet(
+            a1=row[c_a1],
+            a2=row[c_a2],
+            a3=row[c_a3],
+            dt=row[c_dt],
+            alpha=row[c_alpha],
+            r_0=row[c_r0],
+            m=row[c_m],
+            n=row[c_n],
+            k=row[c_k],
+        )
+        non_gravs[i] = ng
+
     return non_gravs
 
 

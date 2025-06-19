@@ -9,6 +9,16 @@ import kete
 from .utils import tdb2utc
 from .configs import HORIZONS_DEPOCHS, PKG_PATH
 
+
+def iterator(it):
+    try:
+        from tqdm import tqdm
+
+        return tqdm(it)
+    except ImportError:
+        return it
+
+
 __all__ = [
     "download_jpl_de",
     "HorizonsSPKQuery",
@@ -156,7 +166,14 @@ def horizons_vector(
 
     Parameters
     ----------
-    obsid : str or dict, required
+    epochs : scalar, list-like, or dictionary
+        Either a list of epochs in JD or MJD format or a dictionary defining a
+        range of times and dates; the range dictionary has to be of the form
+        {``'start'``: 'YYYY-MM-DD [HH:MM:SS]', ``'stop'``: 'YYYY-MM-DD
+        [HH:MM:SS]', ``'step'``: 'n[y|d|m|s]'}. Epoch timescales should be TDB
+        for vector queries. If `None` (default), the current time is used.
+
+    obsid : str or dict
         Name, number, or designation of target object. Uses the same codes as
         JPL Horizons. Arbitrary topocentric coordinates can be added in a dict.
         The dict has to be of the form {``'lon'``: longitude in deg (East
@@ -179,13 +196,6 @@ def horizons_vector(
         Earth]}. Float values are assumed to have units of degrees and
         kilometers.
         Some tips: Sun center is ``"@10"``.
-
-    epochs : scalar, list-like, or dictionary, optional
-        Either a list of epochs in JD or MJD format or a dictionary defining a
-        range of times and dates; the range dictionary has to be of the form
-        {``'start'``: 'YYYY-MM-DD [HH:MM:SS]', ``'stop'``: 'YYYY-MM-DD
-        [HH:MM:SS]', ``'step'``: 'n[y|d|m|s]'}. Epoch timescales should be TDB
-        for vector queries. If `None` (default), the current time is used.
 
     id_type : str, optional
         Controls Horizons's object selection for ``id``

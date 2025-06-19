@@ -59,7 +59,9 @@ def iau_hg_model(alpha, gpar=0.15):
     """
     n = alpha.shape[0]
     intensity = np.empty(n, dtype=np.float64)
-    onemgpar = 1.0 - gpar
+    # onemgpar = 1.0 - gpar
+    phi1 = np.empty(n, dtype=np.float64)
+    phi2 = np.empty(n, dtype=np.float64)
     for i in range(n):
         # convert degrees to radians
         ar = np.abs(alpha[i]) * _D2R
@@ -77,12 +79,13 @@ def iau_hg_model(alpha, gpar=0.15):
         phi2_l = np.exp(-1.862 * np.pow(tah, 1.218))
 
         # mix them
-        intensity[i] = gpar * (w * phi1_s + (1.0 - w) * phi1_l) + onemgpar * (
-            w * phi2_s + (1.0 - w) * phi2_l
-        )
-        # phi1[i] = w * phi1_s + (1.0 - w) * phi1_l
-        # phi2[i] = w * phi2_s + (1.0 - w) * phi2_l
+        # intensity[i] = gpar[i] * (w * phi1_s + (1.0 - w) * phi1_l) + onemgpar[i] * (
+        #     w * phi2_s + (1.0 - w) * phi2_l
+        # )
+        phi1[i] = w * phi1_s + (1.0 - w) * phi1_l
+        phi2[i] = w * phi2_s + (1.0 - w) * phi2_l
 
+    intensity = gpar * phi1 + (1.0 - gpar) * phi2
     return intensity
 
 
