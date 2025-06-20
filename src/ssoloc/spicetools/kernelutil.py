@@ -1,11 +1,11 @@
 from pathlib import Path
-
+from ..configs import PKG_PATH
 
 __all__ = ["make_meta"]
 
 
 # Path to spicetools/kernels:
-DEFAULT_KERNELS = Path(__file__).resolve().parent / "kernels"
+DEFAULT_KERNELS = str(PKG_PATH / "kernels")
 
 # Basic template for the meta file:
 META_TEMPLATE = r"""\begintext
@@ -26,7 +26,7 @@ KERNELS_TO_LOAD = (
 
 
 def make_meta(
-    *args, path_values="", path_symbols="", autoreplace=False, output="kernel_meta"
+    *args, path_values="", path_symbols="", autoreplace=False, output="kernel_meta", load=False
 ):
     """Create a kernel meta file from a list of kernel paths.
 
@@ -54,6 +54,11 @@ def make_meta(
         Name of the output kernel meta file.
         Default is ``kernel_meta`` and this file without further extension will
         be created in the current working directory.
+
+    load : bool, optional
+        If `True`, load the kernels after creating the meta file and return the
+        handle.
+        Default is `False`.
 
     Returns
     -------
@@ -92,6 +97,10 @@ def make_meta(
 
     with open(output, "w") as f:
         f.write(META_TEMPLATE.format(pv_str, ps_str, kerns))
+
+    if load:
+        import spiceypy as sp
+        return sp.furnsh(str(output))
 
 
 def make_kernels_to_load(*args, linemax=79):
