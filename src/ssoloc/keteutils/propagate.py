@@ -150,17 +150,13 @@ def orb2state_propagate(
         If `True`, errors during propagation will return NaN for the relevant
         state vectors, but propagation will continue. Default is `True`.
 
-    drop_impacted : bool, optional
-        If `True`, drop the impacted objects from the orbit file (see
-        query.IMPACTED).
-        Default is `True`.
-
     output : str, optional
         If provided, save the propagated states to a parquet file.
         Default is `None`.
 
     overwrite : bool, optional
-        If `True`, overwrite the existing output file if it exists.
+        If `True`, re-do the calculation and overwrite the existing output file
+        if it exists. If `False`, the `output` will be loaded if it exists.
 
     Returns
     -------
@@ -169,11 +165,6 @@ def orb2state_propagate(
 
     states0 : list of `~kete.State`
         The propagated states of the objects at the given JD.
-
-    Notes
-    -----
-    This is a convenience function that is useful when non-gravitational
-    models are **not** needed.
 
     """
     if output is not None and Path(output).exists() and not overwrite:
