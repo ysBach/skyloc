@@ -1,12 +1,19 @@
 from pathlib import Path
 
 import numpy as np
+import kete
+
 from .ssoflux import iau_hg_mag, comet_mag
-from .keteutils.propagate import calc_geometries
+from .keteutils.propagate import (
+    calc_geometries,
+    make_nongravs_models,
+)
+from .keteutils.fov import FOVCollection
+from .configs import KETE_SBDB_MINIMUM_FIELDS, KETE_SBDB2KETECOLS
 import pandas as pd
+from functools import cached_property
 
-__all__ = ["calc_ephems"]
-
+__all__ = ["SSOLocator", "calc_ephems"]
 
 _EPH_DTYPES = {
     "alpha": np.float32,
@@ -20,6 +27,274 @@ _EPH_DTYPES = {
     "obsindex": np.uint32,
 }
 
+
+class SSOLocator:
+    """A class to locate Solar System Objects (SSOs) in a given Field of View (FOV).
+
+    This class provides methods to propagate orbits, check if objects are in the
+    FOV, and calculate ephemerides for the objects.
+
+    Attributes
+    ----------
+    fovs : FOVCollection
+        A collection of FOVs to check against.
+    """
+
+    def __init__(self, fovs, orb, non_gravs=True, copy_orb=False):
+        """
+        Parameters
+        ----------
+        fovs : FOVCollection, iterable of `kete.fov.FOV`, or `kete.fov.FOVList`
+            Field of View(s) to check the propagated states against.
+
+        orb : `pandas.DataFrame`
+            Orbit file with columns of orbital elements. See
+            `query.fetch_orb()`.
+
+        non_gravs : list, bool, optional
+            A list of non-gravitational terms for each object. If provided, then
+            every object must have an associated `kete.NonGravModel` or `None`.
+            If `True`, `keteutils.make_nongravs_models` will be used, i.e.,
+            objects with non-gravitational terms will have non-gravitational
+            models by `kete.NonGravModel.new_comet()`.
+            If `False`, no non-gravitational terms will be used for any object.
+            Default is `True`.
+        """
+        self._fovc = fovs
+        self._orb = orb.copy() if copy_orb else orb
+
+        if isinstance(non_gravs, bool):
+            if non_gravs:
+                self.non_gravs = make_nongravs_models(orb)
+            else:
+                self.non_gravs = [None] * len(orb)
+        else:
+            self.non_gravs = list(non_gravs)
+
+    @property
+    def fovc(self):
+        """Get the FOVCollection."""
+        return self._fovc
+
+    @fovc.setter
+    def fovc(self, fovs):
+        """Set the FOVCollection."""
+        if fovs is None:
+            self._fovc = None
+        elif isinstance(fovs, FOVCollection):
+            self._fovc = fovs
+        else:
+            self._fovc = FOVCollection(fovs)
+
+    @fovc.deleter
+    def fovc(self):
+        """Delete the FOVCollection."""
+        self._fovc = None
+
+    # same for orb:
+    @property
+    def orb(self):
+        """Get the orbit DataFrame."""
+        return self._orb
+
+    @orb.setter
+    def orb(self, orb):
+        """Set the orbit DataFrame."""
+        if not isinstance(orb, pd.DataFrame):
+            raise TypeError("orb must be a pandas DataFrame.")
+        COLSMUSTEXIST_SBDB = [
+            KETE_SBDB2KETECOLS.get(c, c) for c in KETE_SBDB_MINIMUM_FIELDS
+        ]
+        if not all(col in orb.columns for col in COLSMUSTEXIST_SBDB):
+            raise ValueError(
+                "The orbit DataFrame must contain the following columns: "
+                + ", ".join(COLSMUSTEXIST_SBDB)
+            )
+        self._orb = orb
+
+    @orb.deleter
+    def orb(self):
+        """Delete the orbit DataFrame."""
+        self._orb = None
+
+    @cached_property
+    def states_from_orb(self):
+        """Get the initial states of the objects in the orbit file.
+        ~1s per 1M objects in orb at first call
+        on MBP 14" [2024, macOS 15.2, M4Pro(8P+4E/G20c/N16c/48G)]
+        """
+        return kete.mpc.table_to_states(self.orb)
+
+    def propagate_n_body(
+        self,
+        jd0=np.mean,
+        suppress_errors=True,
+        include_asteroids=False,
+        objmask=None,
+        output=None,
+        overwrite=False,
+    ):
+        """Propagate the orbits to the mean JD of the FOVs.
+
+        Parameters
+        ----------
+        jd0 : float, callable, optional
+            A JD (TDB) to propagate the initial states to. If callable (e.g.,
+            `np.mean`), it will be applied to the `.observer.jd` of the FOVs
+            (e.g., `np.mean([fov.observer.jd for fov in self.fovc.fovlist])`).
+            Default is `np.mean`, which uses the mean JD of the FOVs.
+
+        suppress_errors : bool, optional
+            If `True`, errors during propagation will return NaN for the relevant
+            state vectors, but propagation will continue. Default is `True`.
+
+        include_asteroids : bool, optional
+            If `True`, include asteroids in the propagation. Default is `False`.
+
+        objmask : array-like, optional
+            A boolean mask to select which objects to propagate. It will select
+            such as `self.states_from_orb[objmask]` to run the propagation on subset of
+            the objects. Thus, it must have the length same as `self.states_from_orb`,
+            i.e., same as `self.orb`.
+
+        output : str or `~pathlib.Path`, optional
+            If provided, save the propagated states to a parquet file.
+            Default is `None`.
+
+        overwrite : bool, optional
+            If `True`, re-do the calculation and overwrite the existing output file
+            if it exists. If `False`, the `output` will be loaded if it exists.
+
+        Notes
+        -----
+        If `output` is provided and the file already exists, and `overwrite` is
+        `False`, the function will load the existing file instead of redoing
+        the calculation. This means a completely meaningless results can be
+        returned if the file is not up to date.
+        """
+        output_exists = False
+        if output is not None:
+            output = str(output)
+            output_exists = Path(output).exists()
+
+        if output_exists and not overwrite:
+            return kete.SimultaneousStates.load_parquet(output)
+
+        if not isinstance(jd0, (float, int)):
+            # Use the mean JD of the FOVs
+            jd0 = jd0(self.fovc.fov_jds)
+
+        states0 = kete.propagate_n_body(
+            self.states_from_orb if objmask is None else self.states_from_orb[objmask],
+            jd=jd0,
+            include_asteroids=include_asteroids,
+            non_gravs=self.non_gravs,
+            suppress_errors=suppress_errors,
+        )
+
+        if output is not None or overwrite:
+            kete.SimultaneousStates(states0).save_parquet(output)
+            # Load the states from the file to ensure consistency
+            states0 = kete.SimultaneousStates.load_parquet(output)
+
+        self.jd0 = jd0
+        self.states_propagated_jd0 = states0
+
+    def fov_state_check(self, dt_limit=3.0, include_asteroids=False, fovmask=None):
+        """Check which objects are in the FOVs after propagation.
+
+        Parameters
+        ----------
+        dt_limit : float, optional
+            Length of time in days where 2-body mechanics is a good approximation.
+            Default is 3.0 days.
+
+        include_asteroids : bool, optional
+            If `True`, include asteroids in the check. Default is `False`.
+
+        fovmask : array-like, optional
+            A boolean mask to select which FOVs to check. It will select such
+            as `self.fovc[fovmask]` to run the check on subset of the FOVs.
+            Thus, it must have the length same as `self.fovc.fovlist`.
+
+        Notes
+        -----
+        self.fov_check_simstates : list of `kete.SimultaneousStates`
+            The states of the objects in the FOVs after propagation.
+            Basically the output of `kete.fov.fov_state_check`.
+
+        self.fov_check_fov2objs : dict
+            A dictionary mapping FOV designations to lists of object designations
+            that are in the FOVs.
+
+        self.fov_check_objids : list of str
+            A list of unique object designations that are in the FOVs.
+        """
+        simstas = kete.fov.fov_state_check(
+            self.states_propagated_jd0,
+            self.fovc.fovlist,
+            dt_limit=dt_limit,
+            include_asteroids=include_asteroids,
+        )
+        # Convenience: Collect the designations of the FOVs and objects
+        fov2objs = {}
+        # key = FOV's designations (str)
+        # value = list of object designations in that FOV (list[str])
+        for _ss in simstas:
+            _objids = []
+            for _s in _ss.states:
+                _objids.append(_s.desig)
+            fov2objs.setdefault(_ss.fov.observer.desig, []).extend(_objids)
+
+        # For ~1000 elements, below is ~ 10x faster than
+        #    np.unique(np.concatenate(list(fov2objs.values())))
+        uniq_objids = set()
+        for objids in fov2objs.values():
+            uniq_objids.update(objids)
+        uniq_objids = list(uniq_objids)
+
+        self.fov_check_simstates = simstas
+        self.fov_check_fov2objs = fov2objs
+        self.fov_check_objids = uniq_objids
+
+        # FOVs with objects
+        self.fov_mask_hasobj = self.fovc.mask_by_desig(fov2objs.keys())
+        self.fovc_hasobj = FOVCollection(self.fovc[self.fov_mask_hasobj])
+
+        # objects in at least one of FOV
+        self.orb_infov_mask = self.orb["desig"].isin(uniq_objids)
+
+    def calc_ephems(
+        self,
+        gpar_default=0.15,
+        sort_by=["vmag"],
+        dtypes=_EPH_DTYPES,
+        output=None,
+        overwrite=False,
+    ):
+        """Calculate ephemerides for the objects in the FOVs."""
+        eph, obsindex = calc_ephems(
+            self.orb,
+            self.fov_check_simstates,
+            gpar_default=gpar_default,
+            sort_by=sort_by,
+            dtypes=dtypes,
+            output=output,
+            overwrite=overwrite,
+        )
+        self.eph = eph
+        self.eph_obsindex = obsindex
+
+    @cached_property
+    def eph_obsids(self):
+        """Get the observer designations for the ephemerides.
+
+        Useful as `self.eph["obsid"] = self.eph_obsids`
+        """
+        return self.eph["obsindex"].apply(lambda x: self.eph_obsindex[x])
+
+    def world2pix():
+        pass
 
 def _calc_ephem(orb, simulstates, gpar_default=0.15, sort_by=["vmag"]):
     """
@@ -43,10 +318,11 @@ def _calc_ephem(orb, simulstates, gpar_default=0.15, sort_by=["vmag"]):
     #   related calculations. I did not put much effort into optimizing it.
     geoms = calc_geometries(simulstates)
 
-    orb = orb.loc[orb["desig"].isin(geoms["desig"])].reset_index()
+    # orb = orb.loc[orb["desig"].isin(geoms["desig"])]
+    inmask = orb["desig"].isin(geoms["desig"])
 
     orb["G"] = orb["G"].fillna(gpar_default)
-    _orb = orb[["H", "G", "M1", "M2", "K1", "K2", "PC"]].to_numpy()
+    _orb = orb[["H", "G", "M1", "M2", "K1", "K2", "PC"]].to_numpy()[inmask, :]
 
     vmags = iau_hg_mag(
         _orb[:, 0],
@@ -121,10 +397,21 @@ def calc_ephems(
 
     **kwargs : dict, optional
         Additional keyword arguments to pass to `pandas.DataFrame.to_parquet()`.
+
+    Returns
+    -------
+    dfs : `~pandas.DataFrame`
+        DataFrame containing the ephemerides of the objects in the FOV.
+
+    obsids : list of str
+        List of observer designations for "obsindex" column in `dfs`.
+        The true designation can be found as `dfs["obsindex"].apply(lambda x:
+        obsids[x])`. But doing this *might* increase the memory usage **a lot**
+        because of long strings in the `obsids` list.
     """
     dfs = []
-    obsids = []
     _orb = orb[["desig", "H", "G", "M1", "M2", "K1", "K2", "PC"]].copy()
+    obsids = []
     for idx, _simulstates in enumerate(list(simulstates)):
         eph, _ = _calc_ephem(
             _orb, _simulstates, gpar_default=gpar_default, sort_by=None
@@ -146,4 +433,5 @@ def calc_ephems(
         if overwrite or not output.exists():
             dfs.to_parquet(output, **kwargs)
 
+    # return dfs
     return dfs, obsids
