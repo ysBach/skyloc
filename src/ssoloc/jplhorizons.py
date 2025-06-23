@@ -159,7 +159,7 @@ def horizons_vector(
     location=None,
     id_type=None,
     depochs=HORIZONS_DEPOCHS,
-    aberrations="apparent",
+    aberrations="geometric",
     **kwargs,
 ):
     """Get the state vector from JPL Horizons ("vector query").
@@ -330,10 +330,10 @@ def horizons_quick(
     for i in range(0, len(epochs), depochs):
         _epochs = epochs[i : i + depochs]
         obj = Horizons(id=objid, location=location, epochs=_epochs)
-        eph = obj.ephemerides(
+        _eph = obj.ephemerides(
             extra_precision=True, quantities=",".join(map(str, range(1, 49)))
         )
-        eph.append(eph)
+        eph.append(_eph)
     eph = vstack(eph)
     colmaps = {
         "RA": "ra",
