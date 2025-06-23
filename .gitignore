@@ -1,8 +1,8 @@
-src/spicetools/kernels/**/*.bsp
 **/**.parq
 docs/obsolete*
 docs/test*
 docs/*.fits
+src/spicetools/kernels/**/de*.bsp
 **/*.DS_Store
 
 
@@ -170,3 +170,4 @@ cython_debug/
 #.idea/
 src/ssoloc/spicetools/kernels/de440s.bsp
 docs/test
+src/ssoloc/utils.py
