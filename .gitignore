@@ -1,6 +1,8 @@
 src/spicetools/kernels/**/*.bsp
 **/**.parq
 docs/obsolete*
+docs/test*
+docs/*.fits
 **/*.DS_Store
 
 
@@ -167,3 +169,4 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 src/ssoloc/spicetools/kernels/de440s.bsp
+docs/test
