@@ -26,7 +26,12 @@ KERNELS_TO_LOAD = (
 
 
 def make_meta(
-    *args, path_values="", path_symbols="", autoreplace=False, output="kernel_meta", load=False
+    *args,
+    path_values="",
+    path_symbols="",
+    autoreplace=False,
+    output="kernel_meta",
+    load=False,
 ):
     """Create a kernel meta file from a list of kernel paths.
 
@@ -100,6 +105,7 @@ def make_meta(
 
     if load:
         import spiceypy as sp
+
         return sp.furnsh(str(output))
 
 
