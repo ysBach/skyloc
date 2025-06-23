@@ -14,6 +14,7 @@ __all__ = [
     "solspect_wlcut",
     "HORIZONS_DEPOCHS",
     "KETE_SBDB_MINIMUM_FIELDS",
+    "KETE_SBDB2KETECOLS",
     "SBDB_FIELDS",
     "SBDB_ALLOWED_SBCLASS",
     "IMPACTED",
@@ -130,6 +131,15 @@ KETE_SBDB_MINIMUM_FIELDS = [
     "H_sigma",
 ]
 
+KETE_SBDB2KETECOLS = {
+    "e": "ecc",
+    "i": "incl",
+    "q": "peri_dist",
+    "w": "peri_arg",
+    "tp": "peri_time",
+    "om": "lon_node",
+    "pdes": "desig",
+}
 
 # TODO: Eventually some of these may be moved to astroquery.jplsbdb
 _SBDB_FIELDS = pd.read_csv(

@@ -2,7 +2,7 @@ from pathlib import Path
 import pandas as pd
 
 from .jplsbdb import SBDBQuery, sanitize_sbdb
-from .configs import KETE_SBDB_MINIMUM_FIELDS
+from .configs import KETE_SBDB_MINIMUM_FIELDS, KETE_SBDB2KETECOLS
 
 __all__ = [
     "fetch_orb",
@@ -150,16 +150,7 @@ def _fetch_orb_sbdb(
     compression="snappy",
     filters=None,
 ):
-    col_map2kete = {
-        "e": "ecc",
-        "i": "incl",
-        "q": "peri_dist",
-        "w": "peri_arg",
-        "tp": "peri_time",
-        "om": "lon_node",
-        "pdes": "desig",
-    }
-    float_cols = list(col_map2kete.values())[:-1] + [
+    float_cols = list(KETE_SBDB2KETECOLS.values())[:-1] + [
         "epoch",
         "H",
         "G",
@@ -180,7 +171,7 @@ def _fetch_orb_sbdb(
             orb, drop_impacted=drop_impacted, drop_unreliable=drop_unreliable
         )
         # Update column names to match the `kete` convention
-        orb = orb.rename(columns=col_map2kete)
+        orb = orb.rename(columns=KETE_SBDB2KETECOLS)
 
         # Fill non-grav model params with 0.0 for convenience (when using
         # NonGravModel.new_comet)
@@ -227,8 +218,8 @@ def _fetch_orb_sbdb(
 
         # If q_new.fields is not equal to orb.columns (DataFrame), except for
         # kete-mapping columns, raise an error:
-        cols_new = set(q_new.fields) - set(col_map2kete.keys())
-        cols_old = set(orb.columns) - set(col_map2kete.values())
+        cols_new = set(q_new.fields) - set(KETE_SBDB2KETECOLS.keys())
+        cols_old = set(orb.columns) - set(KETE_SBDB2KETECOLS.values())
         if cols_new != cols_old:
             raise ValueError(
                 "The fields in the new query do not match the existing DataFrame columns.\n"
