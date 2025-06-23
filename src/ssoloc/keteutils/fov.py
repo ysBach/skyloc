@@ -1,8 +1,236 @@
+from pathlib import Path
+
 import kete
 import numpy as np
+
 from .statevec import make_kete_state
 
-__all__ = ["make_rect_fov", "make_cone_fov", "fov_state_check"]
+__all__ = [
+    "FOVCollection",
+    "make_fovlist",
+    "make_rect_fov",
+    "make_cone_fov",
+]
+
+
+class FOVCollection:
+    """A convenience tool for FOVList
+
+    It allows (`fovc = FOVCollection(fovs)`):
+        1. Easy indexing like numpy (e.g., `fovc[0]` or `fovc[1:10]`),
+        2. Easy masking (e.g., `fovc[mask_arr]`),
+        3. Easy access to FOV designations (e.g., `fovc["fov001"]`)
+        4. Easy access by multiple designations (e.g., `fovc[["fov001", "fov002"]]`).
+
+    Has useful methods/attributes:
+      - `.fov_jds`: An array of JDs for the FOVs.
+      - `.mask_by_desig(desigs)`: Returns a mask for the FOVs based on the
+        designations. Very fast because it uses `set` behind the curtains.
+          - Use the resulting mask as `fovc[mask]` to get the subset of FOVs in
+            ndarray.
+          - Use `fovc.fov_desigs[mask]` to get the corresponding designations
+            in ndarray.
+          - Make a new collection object by `FOVCollection(fovc[mask])`.
+    """
+
+    def __init__(self, fovs, fov_desigs=None, sort_fovlist=False):
+        """
+        Parameters
+        ----------
+        fovs : `kete.FOV` or iterable of `kete.FOV`
+            An iterable of FOV objects, or a `kete.FOVList` object.
+
+        fov_desigs : array-like of str, optional
+            A list of designations for the FOVs. If not provided, the
+            designations will be taken from the `observer.desig` of each FOV.
+            Note that kete never allows non-str `desig` for observer `State`,
+            so it is expected the given `fov_desigs` are strings.
+
+        sort_fovlist : bool, optional
+            If `True`, the FOVs will be sorted by JD (`kete.fov.FOVList.sort()`).
+        """
+        self.fovlist, self.fovarr = make_fovlist(fovs, sort=sort_fovlist)
+
+        if fov_desigs is None:
+            self.fov_desigs = []
+            self.fov_jds = []
+            self._desig_index = {}
+            for i, fov in enumerate(self.fovlist):
+                desig = fov.observer.desig
+                self.fov_desigs.append(desig)
+                self._desig_index[desig] = i
+                self.fov_jds.append(fov.observer.jd)
+            self.fov_desigs = np.asarray(self.fov_desigs)
+            self.fov_jds = np.asarray(self.fov_jds)
+        else:
+            try:
+                fov_desigs = list(fov_desigs)
+            except Exception as e:
+                raise ValueError(
+                    "fov_desigs must be an iterable of strings, "
+                    f"got {type(fov_desigs)}. \n{e}"
+                )
+
+            if len(fov_desigs) != len(self.fovlist):
+                raise ValueError("Length of fov_desigs must match the length of fovs.")
+
+            self.fov_desigs = np.asarray(fov_desigs)
+            self.fov_jds = np.asarray([fov.observer.jd for fov in self.fovarr])
+            self._desig_index = {str(desig): i for i, desig in enumerate(fov_desigs)}
+
+    def __getitem__(self, item):
+        """Get FOV by index or designation."""
+
+        try:  # if int or numpy-like access:
+            return self.fovarr[item]
+        except IndexError:
+            try:  # if str:
+                return self.fovarr[self._desig_index[item]]
+            except TypeError:  # list of str
+                mask = self.mask_by_desig(item)
+                return self.fovarr[mask]
+
+    def __getattr__(self, name):
+        # e.g., size
+        try:
+            return getattr(self.fovarr, name)
+        except AttributeError:
+            raise AttributeError(f"FOVCollection has no attribute {name}")
+
+    def __repr__(self):
+        return f"FOVCollection with {len(self.fovlist)} FOVs"
+
+    def mask_by_desig(self, desigs):
+        """Return a mask for the FOVs based on the designations.
+
+        Parameters
+        ----------
+        desigs : str or iterable of str
+            A single designation or an iterable of designations to mask the FOVs.
+
+        Returns
+        -------
+        fovmask : np.ndarray of bool
+            A boolean mask indicating which FOVs have the given designations.
+
+        Notes
+        -----
+        It will be faster than simple `FOVCollection.fov_desigs.isin(desigs)`
+        or `[FOVCollection[desig] for desig in desigs]` because it uses
+        `set` behind the curtains. For example, this method is about 10x faster
+        than these alternatives for ~1000 FOV elements.
+        """
+        if isinstance(desigs, str):
+            desigs = [desigs]
+
+        # Below uses set behind the curtains: ~10x faster than np.isin for
+        # ~1000 elements
+        _set = set(desigs)
+        fovmask = np.fromiter(
+            (k in _set for k in self.fov_desigs), dtype=bool, count=len(self.fov_desigs)
+        )
+
+        return fovmask
+
+    def save(self, filename):
+        """Save the FOVCollection.
+
+        Notes
+        -----
+        It only saves `self.fovlist`, by using `kete.fov.FOVList.save()`. Since
+        `FOVCollection` can be initiated solely from `FOVList`, it is used to
+        be loaded back.
+        """
+        self.fovlist.save(filename)
+
+    @classmethod
+    def load(cls, filename):
+        """Load the FOVCollection from a file.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the file containing the saved FOVList
+
+        Returns
+        -------
+        FOVCollection
+            A new FOVCollection instance loaded from the file
+
+        Notes
+        -----
+        This is a class method that can be called as FOVCollection.load(filename).
+        It loads the FOVList from the file and creates a new FOVCollection instance.
+        """
+        _fovl = kete.fov.FOVList.load(filename)
+        return cls(_fovl)
+
+
+def make_fovlist(fovs, output=None, overwrite=False, sort=False):
+    """Convenience function to create a `kete.FOVList` object from an iterable of
+    `kete.FOV` objects.
+
+    Parameters
+    ----------
+    fovs : iterable of `kete.FOV`
+        An iterable of FOV objects.
+
+    output : path-like, optional
+        If provided, the FOVList will be saved to this file.
+
+    overwrite : bool, optional
+        If `True`, overwrite the existing file if it exists.
+        Default is `False`.
+
+    sort : bool, optional
+        If `True`, the FOVList will be sorted by JD (`kete.fov.FOVList.sort()`).
+        Default is `False`.
+
+    Returns
+    -------
+    FOVList : `kete.FOVList`
+        A FOVList object containing the FOVs.
+
+    fovs : np.ndarray of `kete.FOV`
+        A list of FOV objects, `np.asarray(FOVList)` for convenience (e.g.,
+        indexing, masking and slicing)
+
+    Notes
+    -----
+    Preferred way: use `FOVCollection`.
+    """
+    if output is None:
+        out_exists = False
+    else:
+        out_exists = Path(output).exists()
+        output = str(output)
+
+    if out_exists and not overwrite:
+        # If the output file exists and overwrite is False, load it
+        fovlist = kete.fov.FOVList.load_parquet(str(output))
+        if sort:
+            fovlist.sort()
+        return fovlist, np.asarray(fovs)
+
+    if isinstance(fovs, kete.fov.FOVList):
+        fovlist = fovs
+    elif isinstance(fovs, (kete.RectangleFOV, kete.ConeFOV, kete.OmniDirectionalFOV)):
+        fovlist = kete.fov.FOVList((fovs,))
+    else:
+        try:
+            fovlist = kete.fov.FOVList(tuple(fovs))
+        except Exception:
+            fovlist = kete.fov.FOVList(list(fovs))
+
+    if sort:
+        fovlist.sort()
+
+    if out_exists or overwrite:
+        fovlist.save_parquet(output)
+        # Just to be sure, load it back for consistency
+        fovlist = kete.fov.FOVList.load_parquet(output)
+
+    return fovlist, np.asarray(fovlist)
 
 
 def make_rect_fov(
@@ -156,104 +384,3 @@ def make_cone_fov(
     )
 
     return obssta, fov
-
-
-def fov_state_check(
-    obj_state,
-    fovs,
-    dt_limit=3.0,
-    include_asteroids=False,
-    return_desigs_map=False,
-    return_uniq_objids=False,
-):
-    """Convenience tool around `kete.fov_state_check`.
-
-    Parameters
-    ----------
-    states : list[State]
-        States which do not already have a specified FOV.
-
-    fov : FOVList, iterable of `kete.FOV`
-        A field of view from which to subselect objects which are visible.
-
-    dt_limit : float
-        Length of time in days where 2-body mechanics is a good approximation.
-        Default is 3.0 [days].
-
-    include_asteroids : bool
-        Include the 5 largest asteroids during the computation.
-        Default is `False`. If `True`, the function will include the 5 largest
-        asteroids (1 Ceres, 2 Pallas, 4 Vesta, 10 Hygiea, and 704 Interamnia).
-
-    return_desigs_map : bool
-        If `True`, return a mapping of FOV designations to object designations.
-        The keys are the FOV designations, and the values are lists of object
-        designations that were visible in the corresponding FOV. If `False`,
-        this mapping is not returned.
-
-    return_uniq_objids : bool
-        If `True`, return a unique list of object designations that were visible
-        in the FOVs. This is useful if you want to know which objects were
-        visible in any of the FOVs without needing the mapping. If `False`,
-        `uniq_objids` is `None`.
-        Returned only if `return_desigs_map` is `True`.
-        Default is `False`.
-
-    Returns
-    -------
-    res : list[kete.SimultaneousState]
-        A list of `kete.SimultaneousState` objects, each containing the FOV and
-        the states of the objects that are visible to the observer at the time
-        of the FOV.
-
-    fov_obj_map : dict[str, list[str]] or None
-        If `return_desigs_map` is `True`, a mapping of FOV designations to
-        object designations. The keys are the FOV designations
-        (``list(fov_obj_map.keys())``), and the values are lists of object
-        designations that were visible in the corresponding FOV. (FOVs without
-        any objects are not returned by `kete.fov_state_check`.)
-        Returned only if `return_desigs_map` is `True`.
-
-    uniq_objids : list[str] or None
-        If `return_desigs_map` is `True` and `return_uniq_objids` is `True`,
-        a unique list of object designations that were visible in any of the
-        FOVs. If `return_desigs_map` is `False`, this is `None`.
-        Returned only if `return_desigs_map` is `True`.
-    """
-    # Convenience: convert to FOVList if needed
-    if isinstance(fovs, (kete.RectangleFOV, kete.ConeFOV, kete.OmniDirectionalFOV)):
-        fovs = kete.fov.FOVList((fovs,))
-    elif not isinstance(fovs, kete.fov.FOVList):
-        try:
-            fovs = kete.fov.FOVList(tuple(fovs))
-        except Exception:
-            fovs = kete.fov.FOVList(list(fovs))
-
-    res = kete.fov.fov_state_check(
-        obj_state,
-        fovs,
-        dt_limit=dt_limit,
-        include_asteroids=include_asteroids,
-    )
-
-    if not return_desigs_map:
-        return res
-
-    # Convenience: Collect the designations of the FOVs and objects
-    fov_obj_map = {}
-
-    for _r in res:
-        _objids = []
-        for _s in _r.states:
-            _objids.append(_s.desig)
-        fov_obj_map.setdefault(_r.fov.observer.desig, []).extend(_objids)
-
-    uniq_objids = None
-    if return_uniq_objids:
-        # ~ 10x faster than np.unique(np.concatenate(list(fov_obj_map.values())))
-        uniq_objids = set()
-        for objids in fov_obj_map.values():
-            uniq_objids.update(objids)
-        uniq_objids = list(uniq_objids)
-
-    return res, fov_obj_map, uniq_objids
