@@ -75,8 +75,8 @@ def iau_hg_model(alpha, gpar=0.15):
         # smooth (s) and linear (l) components
         phi1_s = 1.0 - 0.986 * fa
         phi2_s = 1.0 - 0.238 * fa
-        phi1_l = np.exp(-3.332 * np.pow(tah, 0.631))
-        phi2_l = np.exp(-1.862 * np.pow(tah, 1.218))
+        phi1_l = np.exp(-3.332 * np.power(tah, 0.631))
+        phi2_l = np.exp(-1.862 * np.power(tah, 1.218))
 
         # mix them
         # intensity[i] = gpar[i] * (w * phi1_s + (1.0 - w) * phi1_l) + onemgpar[i] * (
