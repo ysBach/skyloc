@@ -3,16 +3,16 @@
 
 <div align="center">
 
-[INSERT YOUR LOGO IMAGE HERE (IF APPLICABLE)]
+<!-- [INSERT YOUR LOGO IMAGE HERE (IF APPLICABLE)] -->
 <!-- ☝️ Replace with your logo (if applicable) via ![](https://uri-to-your-logo-image) ☝️ -->
 <!-- ☝️ If you see logo rendering errors, make sure you're not using indentation, or try an HTML IMG tag -->
 
-<h1 align="center">ssoloc</h1>
+<h1 align="center">skyloc: Sky Locator</h1>
 <!-- ☝️ Replace with your repo name ☝️ -->
 
 </div>
 
-<pre align="center">Convenience tools related to Solar System Objects (SSO) locator (e.g., apparent position and movements) for general purposes.</pre>
+<pre align="center">Convenience tools related to Sidereal or Solar System Objects (SSO) locator (e.g., apparent position and movements) for general purposes.</pre>
 <!-- ☝️ Replace with a single sentence describing the purpose of your repo / proj ☝️ -->
 
 <!-- Header block for project -->
@@ -23,7 +23,7 @@
 <!-- [INSERT SCREENSHOT OF YOUR SOFTWARE, IF APPLICABLE] -->
 <!-- ☝️ Screenshot of your software (if applicable) via ![](https://uri-to-your-screenshot) ☝️ -->
 
-This project is heavily dependent on kete and SPICE toolkits.
+This project is heavily dependent on [kete](https://github.com/Caltech-IPAC/kete/tree/main#) and SPICE toolkits.
 <!-- ☝️ Replace with a more detailed description of your repository, including why it was made and whom its intended for.  ☝️ -->
 
 Initially motivated by NASA's SPHEREx mission (and NEO Surveyor mission).
@@ -32,14 +32,33 @@ Initially motivated by NASA's SPHEREx mission (and NEO Surveyor mission).
 -->
 
 ## Features
+This is a collection of convenience tools for "finding objects in the FOV" or "Finding FOVs that contain certain object(s)", and main functionality is dependent heavily on [kete](https://github.com/Caltech-IPAC/kete/tree/main#).
 
-* Calculate apparent locations and movements of SSOs (i.e., basically the same as kete).
+* **SSO Orbital Elements**
+  - Query and manage SSO orbital elements from SBDB (Small-Body Database)
+  - Convenient file management for orbital element data
 
-<!-- ☝️ Replace with a bullet-point list of your features ☝️ -->
+* **JPL Horizons Integration**
+  - Download and manage DE (Development Ephemeris) files
+  - Query vectors and ephemeris data using `astroquery`
 
+* **SPICE toolkits**
+  - Some convenience tools for SPICE toolkits (such as meta kernel generations)
 
-I adopted a 92-character line length, which is quite unorthodox for Python (92 is taken from [Julia](https://github.com/JuliaDiff/BlueStyle), and admittedly chosen without any solid reasoning). Personally, I find it wide enough without being excessive for most monitors. Following this, I used 79-character line length for docstrings. Contributors are free to revert to the more standard 79- and 72-character limits following PEP8, but to me, that feels too narrow---especially given that Python practically enforces 4-space indentation.
+* **Field of View (FOV) Analysis**
+  - Check which FOVs contain specific sidereal sky locations and/or SSOs (similar to [kete](https://github.com/Caltech-IPAC/kete/tree/main#))
+  - Easy-to-use interface for FOVs (`FOVCollection` class)
 
-Other than this line length, I usually use `black` formatter to format all files by
+* **SSO Position and Motion**
+  - Calculate apparent positions and movements of SSOs (uses [kete](https://github.com/Caltech-IPAC/kete/tree/main#))
+  - Compute SSO magnitudes and phase angles
+  - Additional ephemeris-related convenience tools
 
-    $ black **/*.py
+## Code Style
+
+This project uses a 92-character line length (inspired by [Julia's BlueStyle](https://github.com/JuliaDiff/BlueStyle)) for code and 79 characters for docstrings. While this differs from the standard Python PEP8 recommendations, it provides a good balance for modern displays.
+
+To maintain consistent formatting, use the `black` formatter:
+
+```bash
+black **/*.py
