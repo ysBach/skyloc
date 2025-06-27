@@ -16,6 +16,7 @@ def fetch_orb(
     fields="simple",
     drop_impacted=True,
     drop_unreliable=True,
+    kind2bools=True,
     engine="auto",
     compression="snappy",
     filters=None,
@@ -38,7 +39,7 @@ def fetch_orb(
         If `float`, it will check last-modified time of the file and update the
         entries if the file is older than the given number of days. Ironically,
         setting `update_output` to `False` will be equivalent to setting it to
-        ``0``...
+        ``0``.
         Default is `False`.
 
     server : str, optional
@@ -46,6 +47,13 @@ def fetch_orb(
         in the future, it will be possible to query other servers like
         "iaumpc".
         Default is "jplsbdb".
+
+    kind2bools : bool, optional
+        If `True`, convert JPL SBDB's "kind" field (one of ``{"an", "au", "cn",
+        "cu"}`` for asteroids and comets, numbered and unnumbered objects) to
+        boolean mask columns of ``"is_comet"`` and ``"has_number"``. The
+        original "kind" field is dropped.
+        Default is `True`.
 
     fields : list, optional
         List of fields to download from API. If `None`, it will
@@ -122,6 +130,7 @@ def fetch_orb(
             fields=fields,
             drop_impacted=drop_impacted,
             drop_unreliable=drop_unreliable,
+            kind2bools=kind2bools,
             engine=engine,
             compression=compression,
             filters=filters,
@@ -146,6 +155,7 @@ def _fetch_orb_sbdb(
     fields=None,
     drop_impacted=True,
     drop_unreliable=True,
+    kind2bools=True,
     engine="auto",
     compression="snappy",
     filters=None,
@@ -165,7 +175,7 @@ def _fetch_orb_sbdb(
         "DT",
     ]
 
-    def _postproc(orb):
+    def _postproc(orb, kind2bools):
         # Drop unreliable or impacted objects
         orb = sanitize_sbdb(
             orb, drop_impacted=drop_impacted, drop_unreliable=drop_unreliable
@@ -180,6 +190,13 @@ def _fetch_orb_sbdb(
                 orb[col] = orb[col].fillna(0.0)
             except KeyError:
                 continue
+
+        if kind2bools:
+            _str = orb["kind"].str
+            orb["is_comet"] = _str.startswith("c")
+            orb["has_number"] = _str.endswith("n")
+            orb.drop(columns=["kind"], inplace=True)
+
         return orb
 
     if fields is None:
@@ -193,7 +210,7 @@ def _fetch_orb_sbdb(
         q = SBDBQuery(fields=fields, full_prec=True, sb_xfrag=True)
         orb = q.query()
 
-        orb = _postproc(orb)
+        orb = _postproc(orb, kind2bools=kind2bools)
 
         orb.to_parquet(str(output), engine=engine, compression=compression)
         # TODO: Do we need full freedom for all the args for `to_parquet`?
@@ -228,7 +245,7 @@ def _fetch_orb_sbdb(
             )
 
         new_orb = q_new.query()
-        new_orb = _postproc(new_orb)
+        new_orb = _postproc(new_orb, kind2bools=kind2bools)
 
         # === Append new entries to the existing DataFrame
         orb = pd.concat([orb, new_orb], ignore_index=True).drop_duplicates(
