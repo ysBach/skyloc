@@ -12,6 +12,7 @@ __all__ = [
     "PKG_PATH",
     "SOLSPECT",
     "solspect_wlcut",
+    "MINIMUM_ORB_COLS",
     "HORIZONS_DEPOCHS",
     "KETE_SBDB_MINIMUM_FIELDS",
     "KETE_SBDB2KETECOLS",
@@ -93,6 +94,18 @@ def solspect_wlcut(
     return SOLSPECT
 
 
+# I think at least these are required for kete and skyloc
+MINIMUM_ORB_COLS = [
+    "desig",
+    "ecc",
+    "incl",
+    "peri_dist",
+    "peri_arg",
+    "lon_node",
+    "peri_time",
+    "epoch",
+]
+
 # **************************************************************************************** #
 #                                       JPL Horizons                                       #
 # **************************************************************************************** #
@@ -102,7 +115,8 @@ HORIZONS_DEPOCHS = 50
 # **************************************************************************************** #
 #                                         JPL SBDB                                         #
 # **************************************************************************************** #
-# At least the following fields are required (for kete, as of 2025 March)
+# The following fields are default for kete, as of 2025 March.
+# But... not all of them are actually used in kete (e.g., "name").
 KETE_SBDB_MINIMUM_FIELDS = [
     "pdes",
     "name",
