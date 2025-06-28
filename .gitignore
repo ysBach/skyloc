@@ -2,9 +2,11 @@
 docs/obsolete*
 docs/test*
 docs/*.fits
+docs/*.mk
 src/**/tests*/**/*
 
 src/skyloc/kernels/de*.bsp
+src/skyloc/kernels/*.mk
 # planetary bsps before SPKMERGE
 src/skyloc/kernels/jup*.bsp
 src/skyloc/kernels/mar*.bsp
@@ -13,7 +15,6 @@ src/skyloc/kernels/plu*.bsp
 src/skyloc/kernels/sat*.bsp
 src/skyloc/kernels/ura*.bsp
 
-src/skyloc/kernels/de440s.bsp
 **/*.DS_Store
 
 src/skyloc/_version.py

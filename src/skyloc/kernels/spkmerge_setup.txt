@@ -1,0 +1,17 @@
+LEAPSECONDS_KERNEL    = lsk/naif0012.tls
+SPK_KERNEL            = satellites_2025-2035.bsp
+   BEGIN_TIME            = 2024-12-31T00:00:00
+   END_TIME              = 2036-01-01T23:59:59
+   SOURCE_SPK_KERNEL     = nep104.bsp
+   SOURCE_SPK_KERNEL     = jup365.bsp
+   SOURCE_SPK_KERNEL     = ura111.bsp
+   SOURCE_SPK_KERNEL     = sat415.bsp
+   SOURCE_SPK_KERNEL     = ura115.bsp
+   SOURCE_SPK_KERNEL     = ura117.bsp
+   SOURCE_SPK_KERNEL     = jup344.bsp
+   SOURCE_SPK_KERNEL     = mar097.bsp
+   SOURCE_SPK_KERNEL     = jup346.bsp
+   SOURCE_SPK_KERNEL     = nep095.bsp
+   SOURCE_SPK_KERNEL     = sat441.bsp
+   SOURCE_SPK_KERNEL     = plu060.bsp
+   SOURCE_SPK_KERNEL     = sat454.bsp
