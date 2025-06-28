@@ -1,10 +1,11 @@
 # Very simple utility functions
 from astropy.time import Time
-
+from itertools import compress
 
 __all__ = [
     "tdb2utc",
     "utc2tdb",
+    "listmask",
     "all_world2pix_infov",
     "infov2d",
 ]
@@ -18,6 +19,13 @@ def tdb2utc(tdb, format="jd"):
 def utc2tdb(utc, format="jd"):
     """Convert UTC to TDB."""
     return Time(utc, format=format, scale="utc").tdb
+
+
+def listmask(inlist, mask):
+    """ numpy-like masking as `inlist[mask]`, but for lists."""
+    if mask is None:
+        return inlist
+    return list(compress(inlist, mask))
 
 
 def all_world2pix_infov(wcs, *args, naxes=None, bezels=0.5, **kwargs):
