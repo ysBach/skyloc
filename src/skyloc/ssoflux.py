@@ -13,7 +13,7 @@ _D2R = np.pi / 180.0
 
 
 # numba makes it ~3x faster than the pure numpy version.
-@nb.njit(fastmath=True, cache=True)
+@nb.njit(fastmath=True, cache=False)
 def iau_hg_model(alpha, gpar=0.15):
     """The IAU HG phase function model in intensity (1 at alpha=0).
 
@@ -89,7 +89,7 @@ def iau_hg_model(alpha, gpar=0.15):
     return intensity
 
 
-@nb.njit(fastmath=True, cache=True)
+@nb.njit(fastmath=True, cache=False)
 def iau_hg_mag(hmag, alpha__deg, gpar=0.15, robs=1, rhel=1):
     """The IAU HG phase function model in magnitudes scale.
 
@@ -120,7 +120,7 @@ def iau_hg_mag(hmag, alpha__deg, gpar=0.15, robs=1, rhel=1):
     )
 
 
-@nb.njit(fastmath=True, cache=True)
+@nb.njit(fastmath=True, cache=False)
 def comet_mag(m1, m2, k1, k2, pc, alpha__deg, robs=1, rhel=1):
     """Calculate the apparent magnitude of a comet.
 
