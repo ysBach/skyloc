@@ -1,17 +1,15 @@
+from functools import cached_property
 from pathlib import Path
 
-import numpy as np
 import kete
-
-from .ssoflux import iau_hg_mag, comet_mag
-from .keteutils.propagate import (
-    calc_geometries,
-    make_nongravs_models,
-)
-from .keteutils.fov import FOVCollection
-from .configs import KETE_SBDB_MINIMUM_FIELDS, KETE_SBDB2KETECOLS
+import numpy as np
 import pandas as pd
-from functools import cached_property
+
+from .configs import MINIMUM_ORB_COLS
+from .keteutils.fov import FOVCollection
+from .keteutils.propagate import calc_geometries, make_nongravs_models
+from .ssoflux import comet_mag, iau_hg_mag
+from .utils import listmask
 
 __all__ = ["SSOLocator", "calc_ephems"]
 
@@ -28,7 +26,56 @@ _EPH_DTYPES = {
 }
 
 
-class SSOLocator:
+class Locator:
+    """A base class for locators."""
+
+    def __init__(self, fovs):
+        self._fovc = fovs
+
+    @property
+    def fovc(self):
+        """Get the FOVCollection."""
+        return self._fovc
+
+    @fovc.setter
+    def fovc(self, fovs):
+        """Set the FOVCollection."""
+        if fovs is None:
+            self._fovc = None
+        elif isinstance(fovs, FOVCollection):
+            self._fovc = fovs
+        else:
+            self._fovc = FOVCollection(fovs)
+
+    @fovc.deleter
+    def fovc(self):
+        """Delete the FOVCollection."""
+        self._fovc = None
+
+    def fov_static_check(self):
+        """Check which objects are in the FOVs."""
+
+        pass
+
+    # for planet in ["mars", "jupiter", "saturn", "uranus", "neptune", "pluto"]:
+    #     # do for planets
+    #     simstas.extend(kete.fov.fov_spice_check(planet, self.fovc.fovlist))
+
+
+class SpiceLocator(Locator):
+    """A class to locate objects in a given Field of View (FOV) using SPICE."""
+
+    def __init__(self, fovs, desigs):
+        super().__init__(fovs)
+        self.desigs = desigs
+        self.loaded = kete.spice.loaded_objects()
+
+    def load_spice(fpaths):
+        kete.spice.load_spice(fpaths)
+        self.loaded = kete.spice.loaded_objects()
+
+
+class SSOLocator(Locator):
     """A class to locate Solar System Objects (SSOs) in a given Field of View (FOV).
 
     This class provides methods to propagate orbits, check if objects are in the
@@ -60,8 +107,11 @@ class SSOLocator:
             If `False`, no non-gravitational terms will be used for any object.
             Default is `True`.
         """
-        self._fovc = fovs
-        self._orb = orb.copy() if copy_orb else orb
+        super().__init__(fovs)
+        if copy_orb:
+            orb = orb.copy()
+        self._validate_orb(orb)
+        self._orb = orb
 
         if isinstance(non_gravs, bool):
             if non_gravs:
@@ -71,45 +121,24 @@ class SSOLocator:
         else:
             self.non_gravs = list(non_gravs)
 
-    @property
-    def fovc(self):
-        """Get the FOVCollection."""
-        return self._fovc
+    def _validate_orb(self, orb):
+        """Validate the orbit DataFrame."""
+        if not isinstance(orb, pd.DataFrame):
+            raise TypeError("orb must be a pandas DataFrame.")
 
-    @fovc.setter
-    def fovc(self, fovs):
-        """Set the FOVCollection."""
-        if fovs is None:
-            self._fovc = None
-        elif isinstance(fovs, FOVCollection):
-            self._fovc = fovs
-        else:
-            self._fovc = FOVCollection(fovs)
+        missing = [col for col in MINIMUM_ORB_COLS if col not in orb.columns]
+        if missing:
+            raise ValueError(
+                "The orbit DataFrame is missing required columns: " + ", ".join(missing)
+            )
 
-    @fovc.deleter
-    def fovc(self):
-        """Delete the FOVCollection."""
-        self._fovc = None
-
-    # same for orb:
     @property
     def orb(self):
-        """Get the orbit DataFrame."""
         return self._orb
 
     @orb.setter
     def orb(self, orb):
-        """Set the orbit DataFrame."""
-        if not isinstance(orb, pd.DataFrame):
-            raise TypeError("orb must be a pandas DataFrame.")
-        COLSMUSTEXIST_SBDB = [
-            KETE_SBDB2KETECOLS.get(c, c) for c in KETE_SBDB_MINIMUM_FIELDS
-        ]
-        if not all(col in orb.columns for col in COLSMUSTEXIST_SBDB):
-            raise ValueError(
-                "The orbit DataFrame must contain the following columns: "
-                + ", ".join(COLSMUSTEXIST_SBDB)
-            )
+        self._validate_orb(orb)
         self._orb = orb
 
     @orb.deleter
@@ -185,10 +214,10 @@ class SSOLocator:
             jd0 = jd0(self.fovc.fov_jds)
 
         states0 = kete.propagate_n_body(
-            self.states_from_orb if objmask is None else self.states_from_orb[objmask],
+            listmask(self.states_from_orb, objmask),
             jd=jd0,
             include_asteroids=include_asteroids,
-            non_gravs=self.non_gravs,
+            non_gravs=listmask(self.non_gravs, objmask),
             suppress_errors=suppress_errors,
         )
 
@@ -200,7 +229,7 @@ class SSOLocator:
         self.jd0 = jd0
         self.states_propagated_jd0 = states0
 
-    def fov_state_check(self, dt_limit=3.0, include_asteroids=False, fovmask=None):
+    def fov_state_check(self, dt_limit=3.0, include_asteroids=False):
         """Check which objects are in the FOVs after propagation.
 
         Parameters
@@ -211,11 +240,6 @@ class SSOLocator:
 
         include_asteroids : bool, optional
             If `True`, include asteroids in the check. Default is `False`.
-
-        fovmask : array-like, optional
-            A boolean mask to select which FOVs to check. It will select such
-            as `self.fovc[fovmask]` to run the check on subset of the FOVs.
-            Thus, it must have the length same as `self.fovc.fovlist`.
 
         Notes
         -----
@@ -236,6 +260,7 @@ class SSOLocator:
             dt_limit=dt_limit,
             include_asteroids=include_asteroids,
         )
+
         # Convenience: Collect the designations of the FOVs and objects
         fov2objs = {}
         # key = FOV's designations (str)
@@ -295,6 +320,7 @@ class SSOLocator:
 
     def world2pix():
         pass
+
 
 def _calc_ephem(orb, simulstates, gpar_default=0.15, sort_by=["vmag"]):
     """

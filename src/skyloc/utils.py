@@ -1,6 +1,7 @@
 # Very simple utility functions
-from astropy.time import Time
 from itertools import compress
+
+from astropy.time import Time
 
 __all__ = [
     "tdb2utc",
@@ -22,7 +23,7 @@ def utc2tdb(utc, format="jd"):
 
 
 def listmask(inlist, mask):
-    """ numpy-like masking as `inlist[mask]`, but for lists."""
+    """numpy-like masking as `inlist[mask]`, but for lists."""
     if mask is None:
         return inlist
     return list(compress(inlist, mask))
