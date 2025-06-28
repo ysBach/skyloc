@@ -2,10 +2,21 @@
 docs/obsolete*
 docs/test*
 docs/*.fits
-src/skyloc/spicetools/kernels/**/de*.bsp
 src/**/tests*/**/*
+
+src/skyloc/kernels/de*.bsp
+# planetary bsps before SPKMERGE
+src/skyloc/kernels/jup*.bsp
+src/skyloc/kernels/mar*.bsp
+src/skyloc/kernels/nep*.bsp
+src/skyloc/kernels/plu*.bsp
+src/skyloc/kernels/sat*.bsp
+src/skyloc/kernels/ura*.bsp
+
+src/skyloc/kernels/de440s.bsp
 **/*.DS_Store
 
+src/skyloc/_version.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -169,4 +180,3 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
-src/skyloc/_version.py
