@@ -1,13 +1,49 @@
 from .fov import *
 from .propagate import *
+from .stderr import *
+from .spice import *
 
-import kete
 
-
-# Largest asteroids that are loaded in kete for n-body propagation.
-KETE_LOADED_ASTEROIDS = []
-KETE_LOADED_ASTEROIDS_NAME = []
-for name, spkid in kete.spice.loaded_objects():
-    if spkid > 20_000_000:
-        KETE_LOADED_ASTEROIDS.append(str(spkid - 20_000_000))
-        KETE_LOADED_ASTEROIDS_NAME.append(name)
+# SBDB, as of 2025 Jun
+KETE_ASTEROIDS_PHYSICS = {
+    "1": {
+        "name": "ceres",
+        "spkid": 20_000_001,
+        "H": 3.34,
+        "G": 0.12,
+        "diameter": 939.4,
+        "p_V": 0.090,
+    },
+    "2": {
+        "name": "pallas",
+        "spkid": 20_000_002,
+        "H": 4.11,
+        "G": 0.11,
+        "diameter": 513.0,
+        "p_V": 0.155,
+    },
+    "4": {
+        "name": "vesta",
+        "spkid": 20_000_004,
+        "H": 3.25,
+        "G": 0.32,
+        "diameter": 522.77,
+        "p_V": 0.4228,
+    },
+    "10": {
+        "name": "hygiea",
+        "spkid": 20_000_010,
+        "H": 5.65,
+        "G": 0.15,
+        "diameter": 407.12,
+        "p_V": 0.0717,
+    },
+    "704": {
+        "name": "interamnia",
+        "spkid": 20_000_704,
+        "H": 6.34,
+        "G": -0.02,
+        "diameter": 306.313,
+        "p_V": 0.078,
+    },
+}
