@@ -8,10 +8,11 @@ import pandas as pd
 from .configs import MINIMUM_ORB_COLS
 from .keteutils.fov import FOVCollection
 from .keteutils.propagate import calc_geometries, make_nongravs_models
+from .keteutils.spice import KETE_LOADED_ASTEROIDS
 from .ssoflux import comet_mag, iau_hg_mag
 from .utils import listmask
 
-__all__ = ["SSOLocator", "calc_ephems"]
+__all__ = ["SSOLocator", "SpiceLocator", "calc_ephems"]
 
 _EPH_DTYPES = {
     "alpha": np.float32,
@@ -70,7 +71,7 @@ class SpiceLocator(Locator):
         self.desigs = desigs
         self.loaded = kete.spice.loaded_objects()
 
-    def load_spice(fpaths):
+    def load_spice(self, fpaths):
         kete.spice.load_spice(fpaths)
         self.loaded = kete.spice.loaded_objects()
 
@@ -87,7 +88,9 @@ class SSOLocator(Locator):
         A collection of FOVs to check against.
     """
 
-    def __init__(self, fovs, orb, non_gravs=True, copy_orb=False):
+    def __init__(
+        self, fovs, orb, non_gravs=True, copy_orb=False, drop_major_asteroids=True
+    ):
         """
         Parameters
         ----------
@@ -106,11 +109,18 @@ class SSOLocator(Locator):
             models by `kete.NonGravModel.new_comet()`.
             If `False`, no non-gravitational terms will be used for any object.
             Default is `True`.
+
+        drop_major_asteroids : bool, optional
+            If `True`, drop major asteroids (KETE_LOADED_ASTEROIDS) from the
+            `orb`.
+            Default is `True`.
         """
         super().__init__(fovs)
         if copy_orb:
             orb = orb.copy()
         self._validate_orb(orb)
+        if drop_major_asteroids:
+            orb = orb[~orb.desig.isin(KETE_LOADED_ASTEROIDS)]
         self._orb = orb
 
         if isinstance(non_gravs, bool):
