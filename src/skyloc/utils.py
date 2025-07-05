@@ -37,8 +37,9 @@ def all_world2pix_infov(wcs, *args, naxes=None, bezels=0.5, **kwargs):
         The WCS object.
 
     naxes : array-like of int, optional
-        The number of pixels along each axis. If not provided, it defaults to
-        the maximum values of `x` and `y`.
+        The number of pixels along each axis. If not provided, it defaults
+        first to `wcs._naxis`, and if it does not exist, the maximum values of
+        `x` and `y`.
 
     bezels : int or 2-D array-like, optional
         The number of pixels to drop from each edge of the image. If an int,
@@ -47,6 +48,8 @@ def all_world2pix_infov(wcs, *args, naxes=None, bezels=0.5, **kwargs):
 
     """
     pixels = wcs.all_world2pix(*args, **kwargs)
+    if naxes is None:
+        naxes = getattr(wcs, "_naxis", None)
     infov = infov2d(pixels[0], pixels[1], bezels=bezels, naxes=naxes)
     return pixels, infov
 
