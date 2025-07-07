@@ -31,7 +31,12 @@ class Locator:
     """A base class for locators."""
 
     def __init__(self, fovs):
-        self._fovc = fovs
+        if fovs is None:
+            self._fovc = None
+        elif isinstance(fovs, FOVCollection):
+            self._fovc = fovs
+        else:
+            self._fovc = FOVCollection(fovs)
 
     @property
     def fovc(self):
