@@ -2,6 +2,7 @@
 from itertools import compress
 
 from astropy.time import Time
+import numpy as np
 
 __all__ = [
     "tdb2utc",
@@ -50,6 +51,13 @@ def all_world2pix_infov(wcs, *args, naxes=None, bezels=0.5, **kwargs):
     pixels = wcs.all_world2pix(*args, **kwargs)
     if naxes is None:
         naxes = getattr(wcs, "_naxis", None)
+        for _n in np.atleast_1d(naxes):
+            if _n < 1:
+                raise ValueError(
+                    "`wcs._naxis`, which should be the number of pixels along each axis, "
+                    f"must be a positive integer or array-like. Got this: {naxes = }."
+                    f" Either use proper WCS or give `naxes` explicitly."
+                )
     infov = infov2d(pixels[0], pixels[1], bezels=bezels, naxes=naxes)
     return pixels, infov
 
