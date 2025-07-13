@@ -453,6 +453,11 @@ def calc_ephems(
     dfs = []
     _orb = orb[["desig", "H", "G", "M1", "M2", "K1", "K2", "PC"]].copy()
     obsids = []
+
+    if isinstance(simulstates, kete.SimultaneousStates):
+        # If a single SimultaneousStates is provided, convert it to a list
+        simulstates = [simulstates]
+
     for idx, _simulstates in enumerate(list(simulstates)):
         eph, _ = _calc_ephem(
             _orb, _simulstates, gpar_default=gpar_default, sort_by=None
