@@ -215,6 +215,19 @@ def horizons_vector(
         Aberrations to be accounted for.
         Default : 'geometric'.
 
+    refplane : {'ecliptic', 'equatorial'}, optional
+        Reference plane for the output vectors.
+
+    refplane : {'ecliptic', 'earth', 'body'}, optional
+        Reference plane for all output quantities: ``'ecliptic'`` (ecliptic and
+        mean equinox of reference epoch), ``'earth'`` (Earth mean equator and
+        equinox of reference epoch), or ``'body'`` (body mean equator and node
+        of date).
+        Default: ``'ecliptic'``.
+
+        See "Horizons Reference Frames" in the astroquery documentation for
+        details.
+
     **kwargs : dict, optional
         Additional keyword arguments to pass to
         `~astroquery.jplhorizons.Horizons.vectors`. See
@@ -349,7 +362,6 @@ def horizons_quick(
         "DEC_rate": "ddec/dt",
         "r": "r_hel",
         "delta": "r_obs",
-        "EclLon": "hel_ecl_lon",
         "EclLat": "hel_ecl_lat",
         "ObsEclLon": "obs_ecl_lon",
         "ObsEclLat": "obs_ecl_lat",
