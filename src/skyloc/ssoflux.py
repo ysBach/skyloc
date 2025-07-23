@@ -15,7 +15,7 @@ _D2R = np.pi / 180.0
 # numba makes it ~3x faster than the pure numpy version.
 @nb.njit(fastmath=True, cache=False)
 def iau_hg_model(alpha, gpar=0.15):
-    """The IAU HG phase function model in intensity (1 at alpha=0).
+    r"""The IAU HG phase function model in intensity (1 at alpha=0).
 
     Parameters
     ----------
