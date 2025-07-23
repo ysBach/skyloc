@@ -160,6 +160,7 @@ def horizons_vector(
     id_type=None,
     depochs=HORIZONS_DEPOCHS,
     aberrations="geometric",
+    refplane="ecliptic",
     **kwargs,
 ):
     """Get the state vector from JPL Horizons ("vector query").
@@ -209,6 +210,10 @@ def horizons_vector(
         Number of epochs in a chunk to use for the vector query. This is
         necessary to avoid "too long URI" errors when `epochs` is a large list.
         Default is `HORIZONS_DEPOCHS`.
+
+    aberrations : {'geometric', 'astrometric', 'apparent'}, optional
+        Aberrations to be accounted for.
+        Default : 'geometric'.
 
     **kwargs : dict, optional
         Additional keyword arguments to pass to
@@ -336,6 +341,7 @@ def horizons_quick(
         eph.append(_eph)
     eph = vstack(eph)
     colmaps = {
+        "datetime_jd": "jd_utc",
         "RA": "ra",
         "DEC": "dec",
         "alpha_true": "alpha",
@@ -351,7 +357,11 @@ def horizons_quick(
         "Sky_motion": "sky_motion",
         "Sky_mot_PA": "sky_motion_pa",
     }
-    eph2compare = eph[["datetime_jd"] + list(colmaps.keys())].to_pandas()
+    eph2compare = eph.to_pandas()
+    eph2compare = eph2compare.loc[
+        :,
+        eph2compare.columns.isin(["datetime_jd"] + list(colmaps.keys()))
+    ]
     eph2compare = eph2compare.rename(columns=colmaps)
     eph2compare["dra*cosdec/dt"] /= 60  # arcsec/h to arcsec/min
     eph2compare["ddec/dt"] /= 60  # arcsec/h to arcsec/min
