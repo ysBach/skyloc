@@ -40,8 +40,13 @@ def make_meta(
     *args : str
         List of kernel paths. Some files that are avaliable within this package
         can be specified by using ``$KERNELS``. For example,
-        ``"$KERNELS/lsk/naif0012.tls"``, ``"$KERNELS/pck/gm_de440.tpc"``,
-        ``"$KERNELS/pck/pck00011.tpc"``.
+        ```
+        make_meta(
+            "$KERNELS/lsk/naif0012.tls",
+            "$KERNELS/pck/gm_de440.tpc",
+            "$KERNELS/pck/pck00011.tpc"
+        )
+        ```
 
     path_values, path_symbols : str, path-like, or list of those, optional
         PATH_VALUES and corresponding PATH_SYMBOLS to be included in the meta
