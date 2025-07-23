@@ -10,6 +10,7 @@ __all__ = [
     "make_fovlist",
     "make_rect_fov",
     "make_cone_fov",
+    "make_omni_fov",
 ]
 
 
@@ -327,6 +328,7 @@ def make_cone_fov(
     pos_frame=kete.Frames.Ecliptic,
     vel_frame=kete.Frames.Ecliptic,
     center_id=399,
+    fov_to_sun=True,
 ):
     """Make kete ConeFOV
 
@@ -359,6 +361,11 @@ def make_cone_fov(
         The center of the FOV, by default 399 (Earth geocenter; NOT Earth-Moon
         barycenter (``3``)).
 
+    fov_to_sun : bool, optional
+        If True, the field of view is centered on the Sun, by default True.
+        Note that kete's fov must be centered around the Sun to avoid any
+        "surprises" when checking an object is in the FOV.
+
     Returns
     -------
     obssta : `kete.State`
@@ -376,11 +383,75 @@ def make_cone_fov(
         vel_frame=vel_frame,
         center_id=center_id,
     )
+    if fov_to_sun:
+        obssta = obssta.change_center(10)
 
     fov = kete.ConeFOV(
         pointing=kete.Vector.from_ra_dec(ra=center_ra_deg, dec=center_dec_deg),
         angle=radius_deg,
         observer=obssta,
     )
+
+    return obssta, fov
+
+
+def make_omni_fov(
+    state_desig,
+    jd_tdb,
+    pos_au,
+    vel_aupd,
+    pos_frame=kete.Frames.Ecliptic,
+    vel_frame=kete.Frames.Ecliptic,
+    center_id=399,
+    fov_to_sun=True,
+):
+    """Make kete OmniDirectionalFOV
+
+    Parameters
+    ----------
+    state_desig : str
+        Name of the observer `State` used in the OmniDirectionalFOV object.
+
+    jd_tdb : float or `kete.Time`
+        The time of the state in TDB jd time, see `kete.Time`.
+
+    pos_au, vel_aupd : array_like
+        Position and velocity of the object in au and au/day, respectively,
+        with respect to the center (`center_id`).
+
+    pos_frame, vel_frame : `kete.Frames`, optional
+        The frame of the position and velocity, by default
+        `kete.Frames.Ecliptic`.
+
+    center_id : int, optional
+        The center of the FOV, by default 399 (Earth geocenter; NOT Earth-Moon
+        barycenter (``3``)).
+
+    fov_to_sun : bool, optional
+        If True, the field of view is centered on the Sun, by default True.
+        Note that kete's fov must be centered around the Sun to avoid any
+        "surprises" when checking an object is in the FOV.
+
+    Returns
+    -------
+    obssta : `kete.State`
+        The state of the observer.
+
+    fov : `kete.OmniDirectionalFOV`
+        The field of view.
+    """
+    obssta = make_kete_state(
+        state_desig=state_desig,
+        jd_tdb=jd_tdb,
+        pos_au=pos_au,
+        vel_aupd=vel_aupd,
+        pos_frame=pos_frame,
+        vel_frame=vel_frame,
+        center_id=center_id,
+    )
+    if fov_to_sun:
+        obssta = obssta.change_center(10)
+
+    fov = kete.OmniDirectionalFOV(observer=obssta)
 
     return obssta, fov
