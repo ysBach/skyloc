@@ -2,6 +2,7 @@ from pathlib import Path
 
 import kete
 import numpy as np
+import pandas as pd
 
 __all__ = [
     "make_nongravs_models",
@@ -69,10 +70,10 @@ def make_nongravs_models(
 
     if m_ng is None:  # If not provided...
         m_ng = (
-            (orb[c_a1] != 0.0)
-            | (orb[c_a2] != 0.0)
-            | (orb[c_a3] != 0.0)
-            | (orb[c_dt] != 0.0)
+            ((orb[c_a1] != 0.0) & ~pd.isna(orb[c_a1]))
+            | ((orb[c_a2] != 0.0) & ~pd.isna(orb[c_a2]))
+            | ((orb[c_a3] != 0.0) & ~pd.isna(orb[c_a3]))
+            | ((orb[c_dt] != 0.0) & ~pd.isna(orb[c_dt]))
         )
 
     if isinstance(m_ng, bool):
