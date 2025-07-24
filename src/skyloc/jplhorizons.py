@@ -249,13 +249,13 @@ def horizons_vector(
     # if epochs is iterable, split it into chunks of size `depochs`.
     if isinstance(epochs, (str, dict)):
         obj = Horizons(epochs=epochs, **horkw)
-        vecs = obj.vectors(aberrations=aberrations, **kwargs)
+        vecs = obj.vectors(aberrations=aberrations, refplane=refplane, **kwargs)
     elif hasattr(epochs, "__iter__"):
         vecs = []
         for i in range(0, len(epochs), depochs):
             _epochs = epochs[i : i + depochs]
             obj = Horizons(epochs=_epochs, **horkw)
-            vec = obj.vectors(aberrations=aberrations, **kwargs)
+            vec = obj.vectors(aberrations=aberrations, refplane=refplane, **kwargs)
             vec["tdb_in"] = _epochs
             # ^^^^^^^^^^^ add exact input values ("datetime_jd" may slightly differ)
             vecs.append(vec)
