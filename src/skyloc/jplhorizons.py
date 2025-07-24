@@ -5,6 +5,7 @@ import requests
 from astropy.table import vstack
 import numpy as np
 import kete
+from astropy import units as u
 
 from .utils import tdb2utc
 from .configs import HORIZONS_DEPOCHS, PKG_PATH
@@ -161,6 +162,7 @@ def horizons_vector(
     depochs=HORIZONS_DEPOCHS,
     aberrations="geometric",
     refplane="ecliptic",
+    spice_units=False,
     **kwargs,
 ):
     """Get the state vector from JPL Horizons ("vector query").
@@ -228,6 +230,12 @@ def horizons_vector(
         See "Horizons Reference Frames" in the astroquery documentation for
         details.
 
+    spice_units : bool, optional
+        If `True`, the output table will be in SPICE units (km for distance and
+        km/s for velocity.). Otherwise, use default JPL Horizons units (au for
+        distance and au/day for velocity, as of writing).
+        Default: `False`
+
     **kwargs : dict, optional
         Additional keyword arguments to pass to
         `~astroquery.jplhorizons.Horizons.vectors`. See
@@ -241,7 +249,7 @@ def horizons_vector(
     # if epochs is iterable, split it into chunks of size `depochs`.
     if isinstance(epochs, (str, dict)):
         obj = Horizons(epochs=epochs, **horkw)
-        return obj.vectors(aberrations=aberrations, **kwargs)
+        vecs = obj.vectors(aberrations=aberrations, **kwargs)
     elif hasattr(epochs, "__iter__"):
         vecs = []
         for i in range(0, len(epochs), depochs):
@@ -251,9 +259,25 @@ def horizons_vector(
             vec["tdb_in"] = _epochs
             # ^^^^^^^^^^^ add exact input values ("datetime_jd" may slightly differ)
             vecs.append(vec)
-        return vstack(vecs)
+        vecs = vstack(vecs)
     else:
         raise TypeError(f"`epochs` must be str, dict, or iterable; got {type(epochs)}")
+
+    if spice_units:
+        # Convert to SPICE units (km and km/s)
+        try:
+            vecs["lighttime"] = vecs["lighttime"].to(u.s)
+            for col in ("x", "y", "z", "range"):
+                vecs[col] = vecs[col].to(u.km)
+            for col in ("vx", "vy", "vz", "range_rate"):
+                vecs[col] = vecs[col].to(u.km / u.s)
+        except (ValueError, u.UnitConversionError) as e:
+            raise ValueError(
+                "Failed to convert units to SPICE (km and km/s). "
+                "Check with `spice_units=False` to ensure the input is "
+                "in the correct format, or if JPL output is correct."
+            ) from e
+    return vecs
 
 
 def horizonsvec2ketestate(
