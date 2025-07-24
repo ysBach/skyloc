@@ -1,5 +1,5 @@
 # Very simple utility functions
-from itertools import compress
+from itertools import compress, repeat
 
 from astropy.time import Time
 import numpy as np
@@ -7,6 +7,8 @@ import numpy as np
 __all__ = [
     "tdb2utc",
     "utc2tdb",
+    "as_iter",
+    "zip_iters",
     "listmask",
     "all_world2pix_infov",
     "infov2d",
@@ -28,6 +30,31 @@ def listmask(inlist, mask):
     if mask is None:
         return inlist
     return list(compress(inlist, mask))
+
+
+def as_iter(x, n):
+    """Return an iterator over x. If x is scalar, repeat it n times.
+    Useful for making "dummy" iterators for broadcasting.
+    """
+    # treat numpy scalars, Python scalars as scalar; avoid treating str/bytes as iterable
+    if np.ndim(x) == 0 or isinstance(x, (str, bytes)):
+        return repeat(x, n)
+    # already array-like / iterable
+    return iter(x)
+
+
+def zip_iters(*args):
+    """Zip iterators, broadcasting them to the same length.
+    This makes it easier to iterate over multiple arrays of different lengths
+
+    Usage:
+
+    >>> for vals in zip_iters(arg1, arg2, ...):
+    >>>     # do something
+
+    """
+    n = len(next(arg for arg in args if np.ndim(arg) > 0))
+    return zip(*(as_iter(x, n) for x in args))
 
 
 def all_world2pix_infov(wcs, *args, naxes=None, bezels=0.5, **kwargs):
