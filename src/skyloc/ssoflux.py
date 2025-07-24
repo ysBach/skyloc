@@ -121,6 +121,14 @@ def iau_hg_mag(hmag, alpha__deg, gpar=0.15, robs=1, rhel=1):
 
 
 @nb.njit(fastmath=True, cache=False)
+def _comet_mag(m1, m2, k1, k2, pc, alpha__deg, robs=1, rhel=1):
+    _rh = np.log10(rhel)
+    _ro = np.log10(robs)
+    tmag = m1 + 5 * _rh + k1 * _ro
+    nmag = m2 + 5 * _rh + k2 * _ro + pc * alpha__deg
+    return tmag, nmag
+
+
 def comet_mag(m1, m2, k1, k2, pc, alpha__deg, robs=1, rhel=1):
     """Calculate the apparent magnitude of a comet.
 
@@ -149,8 +157,13 @@ def comet_mag(m1, m2, k1, k2, pc, alpha__deg, robs=1, rhel=1):
     T-mag=M1 + 5*log10(delta) + k1*log10(r)
     N-mag=M2 + 5*log10(delta) + k2*log10(r) + pc*alpha
     """
-    _rh = np.log10(rhel)
-    _ro = np.log10(robs)
-    tmag = m1 + 5 * _rh + k1 * _ro
-    nmag = m2 + 5 * _rh + k2 * _ro + pc * alpha__deg
-    return tmag, nmag
+    m1 = np.asarray(m1, dtype=np.float64)
+    m2 = np.asarray(m2, dtype=np.float64)
+    k1 = np.asarray(k1, dtype=np.float64)
+    k2 = np.asarray(k2, dtype=np.float64)
+    pc = np.asarray(pc, dtype=np.float64)
+    alpha__deg = np.asarray(alpha__deg, dtype=np.float64)
+    robs = np.asarray(robs, dtype=np.float64)
+    rhel = np.asarray(rhel, dtype=np.float64)
+
+    return _comet_mag(m1, m2, k1, k2, pc, alpha__deg, robs, rhel)
