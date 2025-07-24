@@ -163,6 +163,8 @@ def horizons_vector(
     aberrations="geometric",
     refplane="ecliptic",
     spice_units=False,
+    invert=False,
+    return_arr=False,
     **kwargs,
 ):
     """Get the state vector from JPL Horizons ("vector query").
@@ -236,11 +238,32 @@ def horizons_vector(
         distance and au/day for velocity, as of writing).
         Default: `False`
 
+    invert : bool, optional
+        If `True`, the position and velocity vectors will be inverted.
+        Useful in this case: The user only has the TDB time at the observatory
+        in space far from the NAIF object (e.g., Earth). Then the easiest way
+        to query the state vector of the observatory is to query the vector
+        **to** the geocenter and invert it.
+
+    return_arr : bool, optional
+        If `True`, return the state vector components as two numpy arrays
+        (position and velocity), on top of the full table.
+
     **kwargs : dict, optional
         Additional keyword arguments to pass to
         `~astroquery.jplhorizons.Horizons.vectors`. See
         https://astroquery.readthedocs.io/en/latest/api/astroquery.jplhorizons.HorizonsClass.html#astroquery.jplhorizons.HorizonsClass.vectors
 
+    Returns
+    -------
+    astropy.Table
+        The JPL Horizons vector query result.
+
+    pos : numpy.ndarray, optional
+        The position vector in au or km, if `return_arr` is `True`.
+
+    vel : numpy.ndarray, optional
+        The velocity vector in au/day or km/s, if `return_arr` is `True`.
     """
     from astroquery.jplhorizons import Horizons
 
@@ -277,6 +300,18 @@ def horizons_vector(
                 "Check with `spice_units=False` to ensure the input is "
                 "in the correct format, or if JPL output is correct."
             ) from e
+
+    if invert:
+        # Invert position and velocity vectors
+        for xyz in ("x", "y", "z"):
+            vecs[xyz] = -vecs[xyz]
+            vecs[f"v{xyz}"] = -vecs[f"v{xyz}"]
+
+    if return_arr:
+        pos = np.array([vecs["x"].value, vecs["y"].value, vecs["z"].value]).T
+        vel = np.array([vecs["vx"].value, vecs["vy"].value, vecs["vz"].value]).T
+        return vecs, pos, vel
+
     return vecs
 
 
