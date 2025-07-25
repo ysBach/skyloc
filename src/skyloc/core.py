@@ -16,7 +16,7 @@ __all__ = ["SSOLocator", "SpiceLocator", "calc_ephems"]
 
 _EPH_DTYPES = {
     "alpha": np.float32,
-    "vmag": np.float16,  # ~ +/- 0.01 mag error expected
+    "vmag": np.float32,
     "r_obs": np.float32,
     "r_hel": np.float32,
     "dra*cosdec/dt": np.float32,
@@ -69,7 +69,11 @@ class Locator:
 
 
 class SpiceLocator(Locator):
-    """A class to locate objects in a given Field of View (FOV) using SPICE."""
+    """A class to locate objects in a given Field of View (FOV) using SPICE.
+
+    Good examples are planets and satellites, but it can be used for any
+    object that has a SPICE kernel loaded.
+    """
 
     def __init__(self, fovs, desigs):
         super().__init__(fovs)
@@ -80,6 +84,27 @@ class SpiceLocator(Locator):
         kete.spice.load_spice(fpaths)
         self.loaded = kete.spice.loaded_objects()
 
+class StarLocator(Locator):
+    """A class to locate sidereal objects in a given Field of View (FOV).
+
+    This class provides methods to check if stars are in the FOV and to
+    calculate their positions.
+
+    Plan: include proper motions
+
+    Attributes
+    ----------
+    fovs : FOVCollection
+        A collection of FOVs to check against.
+    """
+
+    def __init__(self, fovs):
+        super().__init__(fovs)
+
+    def fov_static_check(self):
+        """Check which stars are in the FOVs."""
+        # Implement star-specific logic here
+        pass
 
 class SSOLocator(Locator):
     """A class to locate Solar System Objects (SSOs) in a given Field of View (FOV).
@@ -449,9 +474,43 @@ def calc_ephems(
         The true designation can be found as `dfs["obsindex"].apply(lambda x:
         obsids[x])`. But doing this *might* increase the memory usage **a lot**
         because of long strings in the `obsids` list.
+
+    Notes
+    -----
+    Included columns are::
+        - alpha :
+            The phase angles in degrees.
+        - r_hel, r_obs :
+            The heliocentric and observer-centric distances in AU.
+        - ra, dec :
+            The observer-centric (J2000) right ascension and declination in degrees.
+        - dra*cosdec/dt, ddec/dt :
+            The observer-centric (J2000) right ascension and declination rates
+            in degrees per day (or arcsec/min if `rates_in_arcsec_per_min` is
+            `True`).
+        - hel_ecl_lons, hel_ecl_lats :
+            The heliocentric ecliptic longitudes and latitudes in degrees.
+        - obs_ecl_lons, obs_ecl_lats :
+            The observer-centric ecliptic longitudes and latitudes in degrees
+            (e.g., the observer is the Earth).
+        - sky_motion, sky_motion_pa :
+            The apparent angular rate of the target in the plane-of-sky in
+            degrees/day (or arcsec/min if `rates_in_arcsec_per_min` is `True`),
+            and the position angle in degrees. PA is positive if RA rate is
+            positive (i.e., measured counter-clockwise from the apparent
+            of-date north pole direction, which is identical to JPL Horizons)
     """
     dfs = []
-    _orb = orb[["desig", "H", "G", "M1", "M2", "K1", "K2", "PC"]].copy()
+    try:
+        _orb = orb[["desig", "H", "G", "M1", "M2", "K1", "K2", "PC"]].copy()
+    except KeyError:
+        # Some columns are missing, add nan:
+        _orb = orb.copy()
+        for col in ["H", "G", "M1", "M2", "K1", "K2", "PC"]:
+            if col not in _orb.columns:
+                _orb[col] = np.nan
+        _orb = _orb[["desig", "H", "G", "M1", "M2", "K1", "K2", "PC"]]
+
     obsids = []
 
     if isinstance(simulstates, kete.SimultaneousStates):
