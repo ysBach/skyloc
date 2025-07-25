@@ -362,8 +362,8 @@ class SSOLocator(Locator):
         pass
 
 
-def _calc_ephem(orb, simulstates, gpar_default=0.15, sort_by=["vmag"]):
-    """
+def _calc_ephem(orb, simulstates, gpar_default=0.15, rates_in_arcsec_per_min=True, sort_by=None):
+    """Calculate the ephemerides for the objects in the FOVs.
     Parameters
     ----------
     orb : `~pandas.DataFrame`
@@ -376,13 +376,17 @@ def _calc_ephem(orb, simulstates, gpar_default=0.15, sort_by=["vmag"]):
         Default slope parameter (G in the IAU H, G model) for the objects.
         Default is 0.15.
 
+    rates_in_arcsec_per_min : bool, optional
+        If `True`, the rates will be in arcsec/min instead of degrees/day.
+        Default is `True`.
+
     sort_by : list, optional
         List of columns to sort the output DataFrame by. Default is ["vmag"].
 
     """
     # NOTE: This is generally a very fast function compared to other SSO
     #   related calculations. I did not put much effort into optimizing it.
-    geoms = calc_geometries(simulstates)
+    geoms = calc_geometries(simulstates, rates_in_arcsec_per_min=rates_in_arcsec_per_min)
 
     # orb = orb.loc[orb["desig"].isin(geoms["desig"])]
     inmask = orb["desig"].isin(geoms["desig"])
@@ -424,6 +428,7 @@ def calc_ephems(
     orb,
     simulstates,
     gpar_default=0.15,
+    rates_in_arcsec_per_min=True,
     sort_by=["vmag"],
     dtypes=_EPH_DTYPES,
     output="eph.parq",
@@ -445,6 +450,10 @@ def calc_ephems(
     gpar_default : float, optional
         Default slope parameter (G in the IAU H, G model) for the objects.
         Default is 0.15.
+
+    rates_in_arcsec_per_min : bool, optional
+        If `True`, the rates will be in arcsec/min instead of degrees/day.
+        Default is `True`.
 
     sort_by : list, optional
         List of columns to sort the output DataFrame by. Default is ["vmag"].
@@ -519,7 +528,9 @@ def calc_ephems(
 
     for idx, _simulstates in enumerate(list(simulstates)):
         eph, _ = _calc_ephem(
-            _orb, _simulstates, gpar_default=gpar_default, sort_by=None
+            _orb, _simulstates, gpar_default=gpar_default,
+            rates_in_arcsec_per_min=rates_in_arcsec_per_min,
+            sort_by=None
         )
         eph["obsindex"] = idx
         obsids.append(_simulstates.fov.observer.desig)
