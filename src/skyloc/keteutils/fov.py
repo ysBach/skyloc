@@ -101,6 +101,10 @@ class FOVCollection:
     def __repr__(self):
         return f"FOVCollection with {len(self.fovlist)} FOVs"
 
+    def __len__(self):
+        """Return the number of FOVs in the collection."""
+        return len(self.fovlist)
+
     def mask_by_desig(self, desigs):
         """Return a mask for the FOVs based on the designations.
 
