@@ -149,6 +149,31 @@ def fetch_orb(
     return orb, m_ng
 
 
+def _orb_postproc(orb, drop_impacted=False, drop_unreliable=False, kind2bools=False):
+    # Drop unreliable or impacted objects
+    orb = sanitize_sbdb(
+        orb, drop_impacted=drop_impacted, drop_unreliable=drop_unreliable
+    )
+    # Update column names to match the `kete` convention
+    orb = orb.rename(columns=KETE_SBDB2KETECOLS)
+
+    # Fill non-grav model params with 0.0 for convenience (when using
+    # NonGravModel.new_comet)
+    for col in ["A1", "A2", "A3", "DT"]:
+        try:
+            orb[col] = orb[col].fillna(0.0)
+        except KeyError:
+            continue
+
+    if kind2bools:
+        _str = orb["kind"].str
+        orb["is_comet"] = _str.startswith("c")
+        orb["has_number"] = _str.endswith("n")
+        orb.drop(columns=["kind"], inplace=True)
+
+    return orb
+
+
 def _fetch_orb_sbdb(
     output=None,
     update_output=False,
@@ -175,30 +200,6 @@ def _fetch_orb_sbdb(
         "DT",
     ]
 
-    def _postproc(orb, kind2bools):
-        # Drop unreliable or impacted objects
-        orb = sanitize_sbdb(
-            orb, drop_impacted=drop_impacted, drop_unreliable=drop_unreliable
-        )
-        # Update column names to match the `kete` convention
-        orb = orb.rename(columns=KETE_SBDB2KETECOLS)
-
-        # Fill non-grav model params with 0.0 for convenience (when using
-        # NonGravModel.new_comet)
-        for col in ["A1", "A2", "A3", "DT"]:
-            try:
-                orb[col] = orb[col].fillna(0.0)
-            except KeyError:
-                continue
-
-        if kind2bools:
-            _str = orb["kind"].str
-            orb["is_comet"] = _str.startswith("c")
-            orb["has_number"] = _str.endswith("n")
-            orb.drop(columns=["kind"], inplace=True)
-
-        return orb
-
     if fields is None:
         fields = KETE_SBDB_MINIMUM_FIELDS
     elif isinstance(fields, list):
@@ -210,7 +211,12 @@ def _fetch_orb_sbdb(
         q = SBDBQuery(fields=fields, full_prec=True, sb_xfrag=True)
         orb = q.query()
 
-        orb = _postproc(orb, kind2bools=kind2bools)
+        orb = _orb_postproc(
+            orb,
+            drop_impacted=drop_impacted,
+            drop_unreliable=drop_unreliable,
+            kind2bools=kind2bools,
+        )
 
         orb.to_parquet(str(output), engine=engine, compression=compression)
         # TODO: Do we need full freedom for all the args for `to_parquet`?
@@ -245,7 +251,12 @@ def _fetch_orb_sbdb(
             )
 
         new_orb = q_new.query()
-        new_orb = _postproc(new_orb, kind2bools=kind2bools)
+        new_orb = _orb_postproc(
+            new_orb,
+            drop_impacted=drop_impacted,
+            drop_unreliable=drop_unreliable,
+            kind2bools=kind2bools,
+        )
 
         # === Append new entries to the existing DataFrame
         orb = pd.concat([orb, new_orb], ignore_index=True).drop_duplicates(
