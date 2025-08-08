@@ -338,17 +338,22 @@ class SSOLocator(Locator):
         overwrite=False,
     ):
         """Calculate ephemerides for the objects in the FOVs."""
-        eph, obsindex = calc_ephems(
-            self.orb,
-            self.fov_check_simstates,
-            gpar_default=gpar_default,
-            sort_by=sort_by,
-            dtypes=dtypes,
-            output=output,
-            overwrite=overwrite,
-        )
-        self.eph = eph
-        self.eph_obsindex = obsindex
+        if self.fov_check_simstates:
+            eph, obsindex = calc_ephems(
+                self.orb,
+                self.fov_check_simstates,
+                gpar_default=gpar_default,
+                sort_by=sort_by,
+                dtypes=dtypes,
+                output=output,
+                overwrite=overwrite,
+            )
+            self.eph = eph
+            self.eph_obsindex = obsindex
+        else:
+            Warning("No valid FOV states for ephemeris calculation.")
+            self.eph = None
+            self.eph_obsindex = None
 
     @cached_property
     def eph_obsids(self):
