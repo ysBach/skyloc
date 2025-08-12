@@ -85,7 +85,7 @@ def all_world2pix_infov(wcs, *args, naxes=None, bezels=0.5, **kwargs):
                     f"must be a positive integer or array-like. Got this: {naxes = }."
                     f" Either use proper WCS or give `naxes` explicitly."
                 )
-    infov = infov2d(pixels[0], pixels[1], bezels=bezels, naxes=naxes)
+    infov = infov2d(pixels[:, 0], pixels[:, 1], bezels=bezels, naxes=naxes)
     return pixels, infov
 
 
