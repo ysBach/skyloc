@@ -334,10 +334,26 @@ class SSOLocator(Locator):
         gpar_default=0.15,
         sort_by=["vmag"],
         dtypes=_EPH_DTYPES,
+        add_obsid=False,
+        drop_obsindex=False,
         output=None,
         overwrite=False,
     ):
-        """Calculate ephemerides for the objects in the FOVs."""
+        """Calculate ephemerides for the objects in the FOVs.
+
+        add_obsid : bool, optional
+            If `True`, add the observer designations to the ephemerides.
+            Default is `False`. If `True`, the ephemerides will have a column
+            "obsid" with the observer designations. This may increase
+            memory usage significantly, especially if there are many `str`
+            obsids for millions of rows.
+
+        drop_obsindex : bool, optional
+            If `True`, drop the "obsindex" column from the ephemerides.
+            Default is `False`. If `True`, the "obsindex" column will be
+            dropped from the ephemerides. This is useful especially if
+            `add_obsid` is `True`.
+        """
         if self.fov_check_simstates:
             eph, obsindex = calc_ephems(
                 self.orb,
@@ -349,7 +365,13 @@ class SSOLocator(Locator):
                 overwrite=overwrite,
             )
             self.eph = eph
+            if add_obsid:
+                # Add the observer designations to the ephemerides
+                self.eph["obsid"] = self.eph["obsindex"].apply(lambda x: obsindex[x])
+            if drop_obsindex:
+                self.eph.drop(columns=["obsindex"], inplace=True)
             self.eph_obsindex = obsindex
+
         else:
             Warning("No valid FOV states for ephemeris calculation.")
             self.eph = None
@@ -361,7 +383,11 @@ class SSOLocator(Locator):
 
         Useful as `self.eph["obsid"] = self.eph_obsids`
         """
-        return self.eph["obsindex"].apply(lambda x: self.eph_obsindex[x])
+        try:
+            return self.eph["obsindex"].apply(lambda x: self.eph_obsindex[x])
+        except KeyError:
+            # if obsindex is dropped in calc_ephems()
+            return np.array(self.eph["obsid"])
 
     def world2pix():
         pass
