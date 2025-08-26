@@ -24,7 +24,7 @@ class FOVCollection:
         4. Easy access by multiple designations (e.g., `fovc[["fov001", "fov002"]]`).
 
     Has useful methods/attributes:
-      - `.fov_jds`: An array of JDs for the FOVs.
+      - `.fov_jds`: An array of JDs for the FOVs (must be in TDB).
       - `.mask_by_desig(desigs)`: Returns a mask for the FOVs based on the
         designations. Very fast because it uses `set` behind the curtains.
           - Use the resulting mask as `fovc[mask]` to get the subset of FOVs in
@@ -104,6 +104,21 @@ class FOVCollection:
     def __len__(self):
         """Return the number of FOVs in the collection."""
         return len(self.fovlist)
+
+    def fov_jds_by_desig(self, desigs=None):
+        """Return an array of JDs for the FOVs (must be in TDB).
+
+        Parameters
+        ----------
+        desigs : str or iterable of str, optional
+            A single designation or an iterable of designations to filter the
+            JDs. If provided, it overrides `mask`. If `desigs` is None, return
+            all JDs (identical to `self.fov_jds`).
+        """
+        if desigs is None:
+            return self.fov_jds
+
+        return self.fov_jds[self.mask_by_desig(desigs)]
 
     def mask_by_desig(self, desigs):
         """Return a mask for the FOVs based on the designations.
