@@ -1,5 +1,5 @@
 import kete
-
+from .frames import parse_frame
 
 __all__ = ["make_kete_state"]
 
@@ -26,14 +26,14 @@ def make_kete_state(
         Position and velocity of the object in au and au/day, respectively,
         with respect to the center (`center_id`).
 
-    pos_frame, vel_frame : `kete.Frames`, optional
+    pos_frame, vel_frame : `kete.Frames`, str, optional
         The frame of the position and velocity, by default
         `kete.Frames.Ecliptic`.
     """
     return kete.State(
         desig=state_desig,
         jd=jd_tdb,
-        pos=kete.Vector(pos_au, frame=pos_frame),
-        vel=kete.Vector(vel_aupd, frame=vel_frame),
+        pos=kete.Vector(pos_au, frame=parse_frame(pos_frame)),
+        vel=kete.Vector(vel_aupd, frame=parse_frame(vel_frame)),
         center_id=center_id,
     )

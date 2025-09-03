@@ -4,6 +4,7 @@ import kete
 import numpy as np
 
 from .statevec import make_kete_state
+from .frames import parse_frame
 
 __all__ = [
     "FOVCollection",
@@ -292,7 +293,7 @@ def make_rect_fov(
         The width of the FOV in degrees, by default 0.1 degrees in both
         longitude and latitude.
 
-    pos_frame, vel_frame : `kete.Frames`, optional
+    pos_frame, vel_frame : `kete.Frames`, str, optional
         The frame of the position and velocity, by default
         `kete.Frames.Ecliptic`.
 
@@ -319,8 +320,8 @@ def make_rect_fov(
         jd_tdb=jd_tdb,
         pos_au=pos_au,
         vel_aupd=vel_aupd,
-        pos_frame=pos_frame,
-        vel_frame=vel_frame,
+        pos_frame=parse_frame(pos_frame),
+        vel_frame=parse_frame(vel_frame),
         center_id=center_id,
     )
     if fov_to_sun:
@@ -372,7 +373,7 @@ def make_cone_fov(
     radius_deg : float, optional
         The radius of the FOV in degrees, by default 0.1 degrees.
 
-    pos_frame, vel_frame : `kete.Frames`, optional
+    pos_frame, vel_frame : `kete.Frames`, str, optional
         The frame of the position and velocity, by default
         `kete.Frames.Ecliptic`.
 
@@ -398,8 +399,8 @@ def make_cone_fov(
         jd_tdb=jd_tdb,
         pos_au=pos_au,
         vel_aupd=vel_aupd,
-        pos_frame=pos_frame,
-        vel_frame=vel_frame,
+        pos_frame=parse_frame(pos_frame),
+        vel_frame=parse_frame(vel_frame),
         center_id=center_id,
     )
     if fov_to_sun:
@@ -438,7 +439,7 @@ def make_omni_fov(
         Position and velocity of the object in au and au/day, respectively,
         with respect to the center (`center_id`).
 
-    pos_frame, vel_frame : `kete.Frames`, optional
+    pos_frame, vel_frame : `kete.Frames`, str, optional
         The frame of the position and velocity, by default
         `kete.Frames.Ecliptic`.
 
@@ -464,8 +465,8 @@ def make_omni_fov(
         jd_tdb=jd_tdb,
         pos_au=pos_au,
         vel_aupd=vel_aupd,
-        pos_frame=pos_frame,
-        vel_frame=vel_frame,
+        pos_frame=parse_frame(pos_frame),
+        vel_frame=parse_frame(vel_frame),
         center_id=center_id,
     )
     if fov_to_sun:

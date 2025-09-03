@@ -8,6 +8,7 @@ import kete
 from astropy import units as u
 
 from .utils import tdb2utc
+from .keteutils import parse_frame
 from .configs import HORIZONS_DEPOCHS, PKG_PATH
 
 
@@ -165,6 +166,7 @@ def horizons_vector(
     spice_units=False,
     invert=False,
     return_arr=False,
+    try_spice=False,
     **kwargs,
 ):
     """Get the state vector from JPL Horizons ("vector query").
@@ -330,7 +332,7 @@ def horizonsvec2ketestate(
         ``targetname`` column in the vector query result will be used.
         Default is `None`.
 
-    frame : `~kete.Frames`, optional
+    frame : `~kete.Frames`, str, optional
         The coordinate frame to use for the state vector. Default is
         `kete.Frames.Ecliptic`.
 
@@ -364,8 +366,8 @@ def horizonsvec2ketestate(
         kete.State(
             desig=d,
             jd=t,
-            pos=kete.Vector(p, frame=frame),
-            vel=kete.Vector(v, frame=frame),
+            pos=kete.Vector(p, frame=parse_frame(frame)),
+            vel=kete.Vector(v, frame=parse_frame(frame)),
             center_id=center_id,
         )
         for d, p, v, t in zip(desigs, pos, vel, vec["tdb_in"])
