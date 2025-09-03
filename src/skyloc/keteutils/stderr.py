@@ -2,7 +2,7 @@
 
 import sys
 from contextlib import contextmanager
-from .spice import KETE_LOADED_ASTEROIDS
+from ._util import KETE_LOADED_ASTEROIDS
 
 __all__ = [
     "filter_stderr",

@@ -4,7 +4,7 @@ import kete
 import numpy as np
 
 from .statevec import make_kete_state
-from .frames import parse_frame
+from ._util import parse_frame
 
 __all__ = [
     "FOVCollection",

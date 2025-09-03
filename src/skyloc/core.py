@@ -8,7 +8,7 @@ import pandas as pd
 from .configs import MINIMUM_ORB_COLS
 from .keteutils.fov import FOVCollection
 from .keteutils.propagate import calc_geometries, make_nongravs_models
-from .keteutils.spice import KETE_LOADED_ASTEROIDS
+from .keteutils._util import KETE_LOADED_ASTEROIDS
 from .ssoflux import comet_mag, iau_hg_mag
 from .utils import listmask
 
@@ -460,6 +460,7 @@ def calc_ephems(
     simulstates,
     gpar_default=0.15,
     rates_in_arcsec_per_min=True,
+    add_jd_tdb=True,
     sort_by=["vmag"],
     dtypes=_EPH_DTYPES,
     output="eph.parq",
@@ -566,6 +567,7 @@ def calc_ephems(
         eph["obsindex"] = idx
         obsids.append(_simulstates.fov.observer.desig)
         dfs.append(eph)
+
     dfs = pd.concat(dfs, ignore_index=True)
 
     if sort_by is not None:
