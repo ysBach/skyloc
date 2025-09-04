@@ -75,10 +75,13 @@ def all_world2pix_infov(wcs, *args, naxes=None, bezels=0.5, **kwargs):
         outside the image.
 
     """
-    xpix, ypix = wcs.all_world2pix(*args, **kwargs)
-    xpix = np.asarray(xpix)
-    ypix = np.asarray(ypix)
-    pixels = np.column_stack((xpix, ypix))  # shape (N, 2)
+    try:
+        xpix, ypix = wcs.all_world2pix(*args, **kwargs)
+        xpix = np.asarray(xpix)
+        ypix = np.asarray(ypix)
+        pixels = np.column_stack((xpix, ypix))  # shape (N, 2)
+    except ValueError:  # args is (N, 2) shape
+        pixels = wcs.all_world2pix(*args, **kwargs)
 
     if naxes is None:
         naxes = getattr(wcs, "_naxis", None)
