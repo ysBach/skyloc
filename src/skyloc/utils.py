@@ -75,7 +75,11 @@ def all_world2pix_infov(wcs, *args, naxes=None, bezels=0.5, **kwargs):
         outside the image.
 
     """
-    pixels = wcs.all_world2pix(*args, **kwargs)
+    xpix, ypix = wcs.all_world2pix(*args, **kwargs)
+    xpix = np.asarray(xpix)
+    ypix = np.asarray(ypix)
+    pixels = np.column_stack((xpix, ypix))  # shape (N, 2)
+
     if naxes is None:
         naxes = getattr(wcs, "_naxis", None)
         for _n in np.atleast_1d(naxes):
@@ -86,6 +90,7 @@ def all_world2pix_infov(wcs, *args, naxes=None, bezels=0.5, **kwargs):
                     f" Either use proper WCS or give `naxes` explicitly."
                 )
     infov = infov2d(pixels[:, 0], pixels[:, 1], bezels=bezels, naxes=naxes)
+
     return pixels, infov
 
 
