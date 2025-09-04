@@ -52,4 +52,6 @@ def parse_frame(frame):
         return frame
     if isinstance(frame, str):
         return getattr(kete.Frames, frame)
+    if frame is None:
+        return None
     raise ValueError(f"Unknown frame type: {frame}")
