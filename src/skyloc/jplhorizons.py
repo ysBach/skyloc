@@ -6,9 +6,11 @@ from astropy.table import vstack
 import numpy as np
 import kete
 from astropy import units as u
+from astropy import constants as c
+from astropy.table import Table
 
 from .utils import tdb2utc
-from .keteutils import parse_frame
+from .keteutils import parse_frame, is_spk_loaded
 from .configs import HORIZONS_DEPOCHS, PKG_PATH
 
 
@@ -179,6 +181,8 @@ def horizons_vector(
         {``'start'``: 'YYYY-MM-DD [HH:MM:SS]', ``'stop'``: 'YYYY-MM-DD
         [HH:MM:SS]', ``'step'``: 'n[y|d|m|s]'}. Epoch timescales should be TDB
         for vector queries. If `None` (default), the current time is used.
+        If `obsid` and `location` are available as loaded SPK **and**
+        `try_spice` is `True`, `epochs` must be in JD (units of days).
 
     obsid : str or dict
         Name, number, or designation of target object. Uses the same codes as
@@ -219,16 +223,19 @@ def horizons_vector(
 
     aberrations : {'geometric', 'astrometric', 'apparent'}, optional
         Aberrations to be accounted for.
+        Ignored if `obsid` and `location` are available as loaded SPK **and**
+        `try_spice` is `True` (result must be corresponding to `'geometric'`).
         Default : 'geometric'.
-
-    refplane : {'ecliptic', 'equatorial'}, optional
-        Reference plane for the output vectors.
 
     refplane : {'ecliptic', 'earth', 'body'}, optional
         Reference plane for all output quantities: ``'ecliptic'`` (ecliptic and
         mean equinox of reference epoch), ``'earth'`` (Earth mean equator and
         equinox of reference epoch), or ``'body'`` (body mean equator and node
         of date).
+        Will be converted as {'ecliptic': 'Ecliptic', 'earth': 'Equatorial'}
+        when `obsid` and `location` are available as loaded SPK **and**
+        `try_spice` is `True`.
+
         Default: ``'ecliptic'``.
 
         See "Horizons Reference Frames" in the astroquery documentation for
@@ -251,6 +258,12 @@ def horizons_vector(
         If `True`, return the state vector components as two numpy arrays
         (position and velocity), on top of the full table.
 
+    try_spice : bool, optional
+        If `True`, attempt to use SPICE kernels to avoid query by parsing
+        `obsid` and `location`. This can provide faster results for major
+        bodies with loaded SPK (see `skyloc.KETE_LOADED_SPKS` and
+        `is_spk_loaded`).
+
     **kwargs : dict, optional
         Additional keyword arguments to pass to
         `~astroquery.jplhorizons.Horizons.vectors`. See
@@ -269,24 +282,56 @@ def horizons_vector(
     """
     from astroquery.jplhorizons import Horizons
 
-    horkw = dict(id=obsid, location=location, id_type=id_type)
+    is_loaded_obs, _obsid = is_spk_loaded(obsid)
+    is_loaded_loc, _locid = is_spk_loaded(location)
+    if try_spice and is_loaded_obs and is_loaded_loc:
+        # Do not query at all
+        _frame = parse_frame({"ecliptic": "Ecliptic", "earth": "Equatorial"}[refplane])
+        pos = []
+        vel = []
+        vecs = {c: [] for c in ["x", "y", "z", "range", "vx", "vy", "vz", "range_rate"]}
+        for _jd in epochs:
+            _sta = kete.spice.get_state(_obsid, _jd, _locid, _frame)
+            pos.append(_sta.pos)
+            vel.append(_sta.vel)
 
-    # if epochs is iterable, split it into chunks of size `depochs`.
-    if isinstance(epochs, (str, dict)):
-        obj = Horizons(epochs=epochs, **horkw)
-        vecs = obj.vectors(aberrations=aberrations, refplane=refplane, **kwargs)
-    elif hasattr(epochs, "__iter__"):
-        vecs = []
-        for i in range(0, len(epochs), depochs):
-            _epochs = epochs[i : i + depochs]
-            obj = Horizons(epochs=_epochs, **horkw)
-            vec = obj.vectors(aberrations=aberrations, refplane=refplane, **kwargs)
-            vec["tdb_in"] = _epochs
-            # ^^^^^^^^^^^ add exact input values ("datetime_jd" may slightly differ)
-            vecs.append(vec)
-        vecs = vstack(vecs)
+        pos = np.array(pos) << u.au
+        vel = np.array(vel) << u.au/u.day
+        vecs = Table()
+        vecs["datetime_jd"] = epochs << u.d
+        vecs["x"] = pos[:, 0]
+        vecs["y"] = pos[:, 1]
+        vecs["z"] = pos[:, 2]
+        vecs["range"] = np.linalg.norm(pos, axis=1)
+        vecs["vx"] = vel[:, 0]
+        vecs["vy"] = vel[:, 1]
+        vecs["vz"] = vel[:, 2]
+        _dot_r_v = np.einsum("ij,ij->i", pos, vel)
+        vecs["range_rate"] = _dot_r_v / vecs["range"]
+        vecs["lighttime"] = (vecs["range"] / (c.c)).to(u.day)  # sec
+
+        vecs["tdb_in"] = epochs  # input times
+
     else:
-        raise TypeError(f"`epochs` must be str, dict, or iterable; got {type(epochs)}")
+        horkw = dict(id=obsid, location=location, id_type=id_type)
+        # if epochs is iterable, split it into chunks of size `depochs`.
+        if isinstance(epochs, (str, dict)):
+            obj = Horizons(epochs=epochs, **horkw)
+            vecs = obj.vectors(aberrations=aberrations, refplane=refplane, **kwargs)
+        elif hasattr(epochs, "__iter__"):
+            vecs = []
+            for i in range(0, len(epochs), depochs):
+                _epochs = epochs[i : i + depochs]
+                obj = Horizons(epochs=_epochs, **horkw)
+                vec = obj.vectors(aberrations=aberrations, refplane=refplane, **kwargs)
+                vec["tdb_in"] = _epochs
+                # ^^^^^^^^^^^ add exact input values ("datetime_jd" may slightly differ)
+                vecs.append(vec)
+            vecs = vstack(vecs)
+        else:
+            raise TypeError(
+                f"`epochs` must be str, dict, or iterable; got {type(epochs)}"
+            )
 
     if spice_units:
         # Convert to SPICE units (km and km/s)
@@ -432,8 +477,7 @@ def horizons_quick(
     }
     eph2compare = eph.to_pandas()
     eph2compare = eph2compare.loc[
-        :,
-        eph2compare.columns.isin(["datetime_jd"] + list(colmaps.keys()))
+        :, eph2compare.columns.isin(["datetime_jd"] + list(colmaps.keys()))
     ]
     eph2compare = eph2compare.rename(columns=colmaps)
     eph2compare["dra*cosdec/dt"] /= 60  # arcsec/h to arcsec/min
