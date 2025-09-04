@@ -37,16 +37,22 @@ def is_spk_loaded(idstr, convert_to=None):
         characters ("500@") will be stripped off.
     """
     # Handle Horizons-style "500@<id>"
+    if idstr is None:
+        return idstr
+
     if idstr.startswith("500@"):
         idstr = idstr[5:]
+
+    elif idstr.startswith("@"):
+        idstr = idstr[1:]
 
     # Is this ID/NAME in the loaded sets?
     is_loaded = idstr in KETE_LOADED_SPKS or idstr in KETE_LOADED_SPKS_NAME
 
-    # Optionally convert
     if convert_to is None:
         return is_loaded, idstr
 
+    # Optionally convert
     convert_to = convert_to.lower()
     if convert_to == "id":
         return is_loaded, KETE_LOADED_SPKS_NAME2ID.get(idstr, idstr)
