@@ -4,6 +4,7 @@ docs/test*
 docs/*.fits
 docs/*.mk
 src/**/tests*/**/*
+**/_version.py
 
 src/skyloc/kernels/de*.bsp
 src/skyloc/kernels/*.mk
