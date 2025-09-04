@@ -297,6 +297,8 @@ def horizons_vector(
 
         pos = np.array(pos) << u.au
         vel = np.array(vel) << u.au/u.day
+
+        # Mimic Horizons query results (NOTE: Do we really have to....?)
         vecs = Table()
         vecs["datetime_jd"] = epochs << u.d
         vecs["x"] = pos[:, 0]
