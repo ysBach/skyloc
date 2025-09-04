@@ -111,7 +111,6 @@ MINIMUM_ORB_COLS = [
 # **************************************************************************************** #
 HORIZONS_DEPOCHS = 50
 
-
 # **************************************************************************************** #
 #                                         JPL SBDB                                         #
 # **************************************************************************************** #
@@ -154,6 +153,25 @@ KETE_SBDB2KETECOLS = {
     "om": "lon_node",
     "pdes": "desig",
 }
+# KETE_SINGLESBDB2KETECOLS = {
+# _PARAM_MAP = {
+#     "a1": "a1",
+#     "a2": "a2",
+#     "a3": "a3",
+#     "aln": "alpha",
+#     "nm": "m",
+#     "r0": "r_0",
+#     "nk": "k",
+#     "nn": "n",
+#     "dt": "dt",
+#     "e": "eccentricity",
+#     "q": "peri_dist",
+#     "tp": "peri_time",
+#     "node": "lon_of_ascending",
+#     "peri": "peri_arg",
+#     "i": "inclination",
+# }
+
 
 # TODO: Eventually some of these may be moved to astroquery.jplsbdb
 _SBDB_FIELDS = pd.read_csv(

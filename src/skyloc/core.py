@@ -12,7 +12,7 @@ from .keteutils._util import KETE_LOADED_ASTEROIDS
 from .ssoflux import comet_mag, iau_hg_mag
 from .utils import listmask
 
-__all__ = ["SSOLocator", "SpiceLocator", "calc_ephems"]
+__all__ = ["locator_twice", "SSOLocator", "SpiceLocator", "calc_ephems"]
 
 _EPH_DTYPES = {
     "alpha": np.float32,
@@ -25,6 +25,71 @@ _EPH_DTYPES = {
     "sky_motion_pa": np.float32,
     "obsindex": np.uint32,
 }
+
+
+def locator_twice(
+    fovs,
+    orb,
+    drop_major_asteroids=True,
+    jd0=(np.mean, np.mean),
+    include_asteroids=(False, True),
+    dt_limit=(5.0, 0.5),
+    suppress_errors=True,
+    add_obsid=False,
+    drop_obsindex=False,
+    add_jd_tdb=False,
+    calc_ephems_crude=False,
+):
+    """Simple utility function to run SSOLocator twice
+
+    Notes
+    -----
+    Arguments `jd0`, `include_asteroids`, and `dt_limit` must be 2-tuple, such
+    that 0-th is used for the first crude calculation and 1-th is used for the
+    second refined calculation.
+
+    First crude calculation is meant to be used with `include_asteroids=False`
+    and large `dt_limit`, to check which objects will be in the FoVs.
+
+    In contrast, the second refined calculation is meant to be used with
+    `include_asteroids=True` and a smaller `dt_limit`, to get more accurate
+    results for the objects that are actually in the FoVs.
+
+    Even for crude case, non_gravs=True is hard-coded because it may give big
+    diffences. Anyways, there are few objects with non-grav terms.
+    """
+    sl1 = SSOLocator(
+        fovs=fovs, orb=orb, non_gravs=True, drop_major_asteroids=drop_major_asteroids
+    )
+    sl1.propagate_n_body(
+        jd0=jd0[0],
+        suppress_errors=suppress_errors,
+        include_asteroids=include_asteroids[0],
+    )
+    sl1.fov_state_check(dt_limit=dt_limit[0], include_asteroids=include_asteroids[0])
+
+    if calc_ephems_crude:
+        sl1.calc_ephems(
+            add_obsid=add_obsid, drop_obsindex=drop_obsindex, add_jd_tdb=add_jd_tdb
+        )
+
+    sl2 = SSOLocator(
+        fovs=sl1.fovc_hasobj,
+        orb=sl1.orb.loc[sl1.orb_infov_mask].copy(),
+        non_gravs=True,
+        drop_major_asteroids=drop_major_asteroids,
+    )
+    sl2.propagate_n_body(
+        jd0=jd0[1],
+        suppress_errors=suppress_errors,
+        include_asteroids=include_asteroids[1],
+    )
+    sl2.fov_state_check(dt_limit=dt_limit[1], include_asteroids=include_asteroids[1])
+    sl2.calc_ephems(
+        add_obsid=add_obsid, drop_obsindex=drop_obsindex, add_jd_tdb=add_jd_tdb
+    )
+
+    return sl1, sl2
 
 
 class Locator:
@@ -84,6 +149,7 @@ class SpiceLocator(Locator):
         kete.spice.load_spice(fpaths)
         self.loaded = kete.spice.loaded_objects()
 
+
 class StarLocator(Locator):
     """A class to locate sidereal objects in a given Field of View (FOV).
 
@@ -105,6 +171,7 @@ class StarLocator(Locator):
         """Check which stars are in the FOVs."""
         # Implement star-specific logic here
         pass
+
 
 class SSOLocator(Locator):
     """A class to locate Solar System Objects (SSOs) in a given Field of View (FOV).
@@ -336,6 +403,7 @@ class SSOLocator(Locator):
         dtypes=_EPH_DTYPES,
         add_obsid=False,
         drop_obsindex=False,
+        add_jd_tdb=False,
         output=None,
         overwrite=False,
     ):
@@ -360,6 +428,7 @@ class SSOLocator(Locator):
                 self.fov_check_simstates,
                 gpar_default=gpar_default,
                 sort_by=sort_by,
+                add_jd_tdb=add_jd_tdb,
                 dtypes=dtypes,
                 output=output,
                 overwrite=overwrite,
@@ -393,7 +462,9 @@ class SSOLocator(Locator):
         pass
 
 
-def _calc_ephem(orb, simulstates, gpar_default=0.15, rates_in_arcsec_per_min=True, sort_by=None):
+def _calc_ephem(
+    orb, simulstates, gpar_default=0.15, rates_in_arcsec_per_min=True, sort_by=None
+):
     """Calculate the ephemerides for the objects in the FOVs.
     Parameters
     ----------
@@ -417,7 +488,9 @@ def _calc_ephem(orb, simulstates, gpar_default=0.15, rates_in_arcsec_per_min=Tru
     """
     # NOTE: This is generally a very fast function compared to other SSO
     #   related calculations. I did not put much effort into optimizing it.
-    geoms = calc_geometries(simulstates, rates_in_arcsec_per_min=rates_in_arcsec_per_min)
+    geoms = calc_geometries(
+        simulstates, rates_in_arcsec_per_min=rates_in_arcsec_per_min
+    )
 
     # orb = orb.loc[orb["desig"].isin(geoms["desig"])]
     inmask = orb["desig"].isin(geoms["desig"])
@@ -460,7 +533,7 @@ def calc_ephems(
     simulstates,
     gpar_default=0.15,
     rates_in_arcsec_per_min=True,
-    add_jd_tdb=True,
+    add_jd_tdb=False,
     sort_by=["vmag"],
     dtypes=_EPH_DTYPES,
     output="eph.parq",
@@ -486,6 +559,10 @@ def calc_ephems(
     rates_in_arcsec_per_min : bool, optional
         If `True`, the rates will be in arcsec/min instead of degrees/day.
         Default is `True`.
+
+    add_jd_tdb : bool, optional
+        If `True`, add a column ``"jd_tdb"`` for the Julian date (TDB) to the
+        output DataFrame. Default is `False`.
 
     sort_by : list, optional
         List of columns to sort the output DataFrame by. Default is ["vmag"].
@@ -560,11 +637,15 @@ def calc_ephems(
 
     for idx, _simulstates in enumerate(list(simulstates)):
         eph, _ = _calc_ephem(
-            _orb, _simulstates, gpar_default=gpar_default,
+            _orb,
+            _simulstates,
+            gpar_default=gpar_default,
             rates_in_arcsec_per_min=rates_in_arcsec_per_min,
-            sort_by=None
+            sort_by=None,
         )
         eph["obsindex"] = idx
+        if add_jd_tdb:
+            eph["jd_tdb"] = _simulstates.jd
         obsids.append(_simulstates.fov.observer.desig)
         dfs.append(eph)
 

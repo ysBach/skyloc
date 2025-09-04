@@ -12,7 +12,7 @@ __all__ = [
     "KETE_LOADED_SPKS_ID2NAME",
     "KETE_LOADED_ASTEROIDS",
     "KETE_LOADED_ASTEROIDS_NAME",
-    "parse_frame"
+    "parse_frame",
 ]
 
 

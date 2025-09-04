@@ -99,7 +99,6 @@ def make_kete_states(
 
     # if state_desig:
 
-
     if pos_au.shape[0] != nsize:
         raise ValueError(
             f"`pos_au` and `jd_tdb` must have the same length along the first axis. "

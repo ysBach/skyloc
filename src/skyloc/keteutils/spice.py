@@ -1,12 +1,14 @@
 import kete
 
-from ._util import (KETE_LOADED_SPKS, KETE_LOADED_SPKS_ID2NAME,
-                    KETE_LOADED_SPKS_NAME, KETE_LOADED_SPKS_NAME2ID,
-                    parse_frame)
+from ._util import (
+    KETE_LOADED_SPKS,
+    KETE_LOADED_SPKS_ID2NAME,
+    KETE_LOADED_SPKS_NAME,
+    KETE_LOADED_SPKS_NAME2ID,
+    parse_frame,
+)
 
-__all__ = [
-    "is_spk_loaded"
-]
+__all__ = ["is_spk_loaded"]
 
 
 def is_spk_loaded(idstr, convert_to=None):
@@ -52,6 +54,7 @@ def is_spk_loaded(idstr, convert_to=None):
         return is_loaded, KETE_LOADED_SPKS_ID2NAME.get(idstr, idstr)
 
     raise ValueError(f"Unknown conversion type: {convert_to}")
+
 
 def get_states(target, jds, center, frame=kete.Frames.Ecliptic):
     """Run multiple get_state for jd values
