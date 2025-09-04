@@ -12,17 +12,15 @@ __all__ = [
 _D2R = np.pi / 180.0
 
 
-# numba makes it ~3x faster than the pure numpy version.
-@nb.njit(fastmath=True, cache=False)
 def iau_hg_model(alpha, gpar=0.15):
     r"""The IAU HG phase function model in intensity (1 at alpha=0).
 
     Parameters
     ----------
-    alpha__deg : array_like
+    alpha__deg : float, array_like
         The phase angle (Sun-Target-Observer angle) in degrees.
 
-    gpar : float, optional
+    gpar : float, array_like, optional
         The slope parameter ($G$) in the IAU H, G modeling. See Notes.
         By default ``0.15``.
 
@@ -57,6 +55,12 @@ def iau_hg_model(alpha, gpar=0.15):
     Reference: Bowell et al. 1989
     https://ui.adsabs.harvard.edu/abs/1989aste.conf..524B/abstract
     """
+    return _iau_hg_model(np.asarray(alpha, dtype=np.float64), gpar)
+
+
+# numba makes it ~3x faster than the pure numpy version.
+@nb.njit(fastmath=True, cache=False)
+def _iau_hg_model(alpha, gpar):
     n = alpha.shape[0]
     intensity = np.empty(n, dtype=np.float64)
     # onemgpar = 1.0 - gpar
@@ -88,8 +92,6 @@ def iau_hg_model(alpha, gpar=0.15):
     intensity = gpar * phi1 + (1.0 - gpar) * phi2
     return intensity
 
-
-@nb.njit(fastmath=True, cache=False)
 def iau_hg_mag(hmag, alpha__deg, gpar=0.15, robs=1, rhel=1):
     """The IAU HG phase function model in magnitudes scale.
 
@@ -98,14 +100,14 @@ def iau_hg_mag(hmag, alpha__deg, gpar=0.15, robs=1, rhel=1):
     hmag : float
         The absolute magnitude of the object.
 
-    alpha__deg : array_like
+    alpha__deg : float, array_like
         The phase angle (Sun-Target-Observer angle) in degrees.
 
     gpar : float, optional
         The slope parameter ($G$) in the IAU H, G modeling. See Notes.
         By default ``0.15``.
 
-    robs, rhel : float, optional
+    robs, rhel : float, array-like, optional
         The observer and heliocentric distance in au. By default 1 au.
 
     Returns
@@ -113,6 +115,10 @@ def iau_hg_mag(hmag, alpha__deg, gpar=0.15, robs=1, rhel=1):
     mag : ndarray
         The apparent magnitude of the object at the given phase angle.
     """
+    return _iau_hg_mag(np.asarray(hmag, dtype=np.float64), np.asarray(alpha__deg, dtype=np.float64), gpar, robs, rhel)
+
+@nb.njit(fastmath=True, cache=False)
+def _iau_hg_mag(hmag, alpha__deg, gpar=0.15, robs=1, rhel=1):
     return (
         hmag
         + 5 * np.log10(robs * rhel)
