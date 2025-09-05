@@ -35,9 +35,9 @@ def locator_twice(
     include_asteroids=(False, True),
     dt_limit=(5.0, 0.5),
     suppress_errors=True,
-    add_obsid=False,
-    drop_obsindex=False,
-    add_jds=False,
+    add_obsid=True,
+    drop_obsindex=True,
+    add_jds=True,
     calc_ephems_crude=False,
 ):
     """Simple utility function to run SSOLocator twice
