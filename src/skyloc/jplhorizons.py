@@ -301,6 +301,7 @@ def horizons_vector(
         # Mimic Horizons query results (NOTE: Do we really have to....?)
         vecs = Table()
         vecs["datetime_jd"] = epochs << u.d
+        vecs["targetname"] = obsid
         vecs["x"] = pos[:, 0]
         vecs["y"] = pos[:, 1]
         vecs["z"] = pos[:, 2]

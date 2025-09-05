@@ -41,7 +41,7 @@ def is_spk_loaded(idstr, convert_to=None):
         return idstr
 
     if idstr.startswith("500@"):
-        idstr = idstr[5:]
+        idstr = idstr[4:]
 
     elif idstr.startswith("@"):
         idstr = idstr[1:]
