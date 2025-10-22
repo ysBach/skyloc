@@ -5,6 +5,10 @@ from astropy.time import Time
 import numpy as np
 
 __all__ = [
+    "au2km",
+    "km2au",
+    "kmps2aupd",
+    "aupd2kmps",
     "tdb2utc",
     "utc2tdb",
     "as_iter",
@@ -13,6 +17,26 @@ __all__ = [
     "all_world2pix_infov",
     "infov2d",
 ]
+
+
+def au2km(x):
+    """Convert AU to km."""
+    return x * 1.49597870700e8
+
+
+def km2au(x):
+    """Convert km to AU."""
+    return x / 1.49597870700e8
+
+
+def kmps2aupd(x):
+    """Convert km/s to AU/day."""
+    return x * 0.00057754833
+
+
+def aupd2kmps(x):
+    """Convert AU/day to km/s."""
+    return x * 1731.4568
 
 
 def tdb2utc(tdb, format="jd"):
