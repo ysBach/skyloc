@@ -423,7 +423,7 @@ def horizonsvec2ketestate(
 
 
 def horizons_quick(
-    objid, epochs, depochs=HORIZONS_DEPOCHS, location="500", in_tdb=True
+    objid, epochs, depochs=HORIZONS_DEPOCHS, location="500", in_tdb=True, **kwargs
 ):
     """Quick query for the object ID from JPL Horizons to compare with kete.
 
@@ -446,6 +446,11 @@ def horizons_quick(
     in_tdb : bool, optional
         If `True`, the input epochs are in TDB. Default is `True`.
         If `False`, the input epochs are in UTC.
+
+    **kwargs : dict, optional
+        Additional keyword arguments to pass to
+        `~astroquery.jplhorizons.Horizons.ephemerides`. See
+        https://astroquery.readthedocs.io/en/latest/api/astroquery.jplhorizons.HorizonsClass.html#astroquery.jplhorizons.HorizonsClass.ephemerides
     """
     from astroquery.jplhorizons import Horizons
 
@@ -458,7 +463,7 @@ def horizons_quick(
         _epochs = epochs[i : i + depochs]
         obj = Horizons(id=objid, location=location, epochs=_epochs)
         _eph = obj.ephemerides(
-            extra_precision=True, quantities=",".join(map(str, range(1, 49)))
+            extra_precision=True, quantities=",".join(map(str, range(1, 49))), **kwargs
         )
         eph.append(_eph)
     eph = vstack(eph)

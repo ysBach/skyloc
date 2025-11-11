@@ -10,7 +10,7 @@ from .keteutils.fov import FOVCollection
 from .keteutils.propagate import calc_geometries, make_nongravs_models
 from .keteutils._util import KETE_LOADED_ASTEROIDS
 from .ssoflux import comet_mag, iau_hg_mag
-from .utils import listmask
+from .utils import listmask, tdb2utc
 
 __all__ = ["locator_twice", "SSOLocator", "SpiceLocator", "calc_ephems"]
 
@@ -35,9 +35,9 @@ def locator_twice(
     include_asteroids=(False, True),
     dt_limit=(5.0, 0.5),
     suppress_errors=True,
-    add_obsid=False,
-    drop_obsindex=False,
-    add_jd_tdb=False,
+    add_obsid=True,
+    drop_obsindex=True,
+    add_jds=True,
     calc_ephems_crude=False,
 ):
     """Simple utility function to run SSOLocator twice
@@ -70,7 +70,7 @@ def locator_twice(
 
     if calc_ephems_crude:
         sl1.calc_ephems(
-            add_obsid=add_obsid, drop_obsindex=drop_obsindex, add_jd_tdb=add_jd_tdb
+            add_obsid=add_obsid, drop_obsindex=drop_obsindex, add_jds=add_jds
         )
 
     sl2 = SSOLocator(
@@ -86,7 +86,7 @@ def locator_twice(
     )
     sl2.fov_state_check(dt_limit=dt_limit[1], include_asteroids=include_asteroids[1])
     sl2.calc_ephems(
-        add_obsid=add_obsid, drop_obsindex=drop_obsindex, add_jd_tdb=add_jd_tdb
+        add_obsid=add_obsid, drop_obsindex=drop_obsindex, add_jds=add_jds
     )
 
     return sl1, sl2
@@ -401,26 +401,25 @@ class SSOLocator(Locator):
         gpar_default=0.15,
         sort_by=["vmag"],
         dtypes=_EPH_DTYPES,
-        add_obsid=False,
-        drop_obsindex=False,
-        add_jd_tdb=False,
+        add_obsid=True,
+        drop_obsindex=True,
+        add_jds=True,
         output=None,
         overwrite=False,
     ):
         """Calculate ephemerides for the objects in the FOVs.
 
         add_obsid : bool, optional
-            If `True`, add the observer designations to the ephemerides.
-            Default is `False`. If `True`, the ephemerides will have a column
-            "obsid" with the observer designations. This may increase
-            memory usage significantly, especially if there are many `str`
-            obsids for millions of rows.
+            If `True`, the ephemerides will have a column "obsid" with the
+            observer designations. This may increase memory usage
+            significantly, especially if there are many `str` obsids for
+            millions of rows. Default is `True`.
 
         drop_obsindex : bool, optional
-            If `True`, drop the "obsindex" column from the ephemerides.
-            Default is `False`. If `True`, the "obsindex" column will be
-            dropped from the ephemerides. This is useful especially if
-            `add_obsid` is `True`.
+            If `True`, the "obsindex" column will be dropped from the
+            ephemerides. This is useful especially if `add_obsid` is `True`.
+            Default is `True`.
+
         """
         if self.fov_check_simstates:
             eph, obsindex = calc_ephems(
@@ -428,17 +427,18 @@ class SSOLocator(Locator):
                 self.fov_check_simstates,
                 gpar_default=gpar_default,
                 sort_by=sort_by,
-                add_jd_tdb=add_jd_tdb,
+                add_jds=add_jds,
                 dtypes=dtypes,
                 output=output,
                 overwrite=overwrite,
             )
-            self.eph = eph
             if add_obsid:
                 # Add the observer designations to the ephemerides
-                self.eph["obsid"] = self.eph["obsindex"].apply(lambda x: obsindex[x])
+                eph["obsid"] = eph["obsindex"].apply(lambda x: obsindex[x])
             if drop_obsindex:
-                self.eph.drop(columns=["obsindex"], inplace=True)
+                eph.drop(columns=["obsindex"], inplace=True)
+
+            self.eph = eph
             self.eph_obsindex = obsindex
 
         else:
@@ -533,7 +533,7 @@ def calc_ephems(
     simulstates,
     gpar_default=0.15,
     rates_in_arcsec_per_min=True,
-    add_jd_tdb=False,
+    add_jds=False,
     sort_by=["vmag"],
     dtypes=_EPH_DTYPES,
     output="eph.parq",
@@ -560,9 +560,12 @@ def calc_ephems(
         If `True`, the rates will be in arcsec/min instead of degrees/day.
         Default is `True`.
 
-    add_jd_tdb : bool, optional
-        If `True`, add a column ``"jd_tdb"`` for the Julian date (TDB) to the
-        output DataFrame. Default is `False`.
+    add_jds : bool, optional
+        If `True`, add two columns ``"jd_tdb"``, ``"jd_utc"`` for the Julian date (TDB) and (UTC) to the output DataFrame. Default is `False`.
+        Many times it is redundant to calculate both, but because general
+        users prefer UTC while all N-body calculations are done in TDB,
+        generating both at the same time makes code easier. Depending on
+        the disk/ram usage, the user can drop the unnecessary column.
 
     sort_by : list, optional
         List of columns to sort the output DataFrame by. Default is ["vmag"].
@@ -617,6 +620,15 @@ def calc_ephems(
             and the position angle in degrees. PA is positive if RA rate is
             positive (i.e., measured counter-clockwise from the apparent
             of-date north pole direction, which is identical to JPL Horizons)
+        - vmag :
+            The apparent magnitude of the object in V-band based on IAU H, G
+            magnitude system *or* comet N-/T-mag system from Horizons. `nanmin`
+            of those values will be used (i.e., T-mag for comets whenever
+            possible).
+        - obsindex :
+            The index of the observer of `simulstates`, starting from 0.
+        - jd_tdb, jd_utc :
+            The Julian date (TDB) and (UTC) in days. (only if `add_jds` is `True`)
     """
     dfs = []
     try:
@@ -644,12 +656,15 @@ def calc_ephems(
             sort_by=None,
         )
         eph["obsindex"] = idx
-        if add_jd_tdb:
+        if add_jds:
             eph["jd_tdb"] = _simulstates.jd
         obsids.append(_simulstates.fov.observer.desig)
         dfs.append(eph)
 
     dfs = pd.concat(dfs, ignore_index=True)
+
+    if add_jds:
+        dfs["jd_utc"] = dfs["jd_tdb"].apply(lambda x: tdb2utc(x).jd)
 
     if sort_by is not None:
         dfs = dfs.sort_values(["obsindex"] + sort_by).reset_index(drop=True)

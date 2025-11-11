@@ -55,42 +55,53 @@ def iau_hg_model(alpha, gpar=0.15):
     Reference: Bowell et al. 1989
     https://ui.adsabs.harvard.edu/abs/1989aste.conf..524B/abstract
     """
-    return _iau_hg_model(np.asarray(alpha, dtype=np.float64), gpar)
+    return _iau_hg_model(
+        np.asarray(alpha, dtype=np.float64),
+        np.asarray(gpar, dtype=np.float64)
+    )
 
 
 # numba makes it ~3x faster than the pure numpy version.
 @nb.njit(fastmath=True, cache=False)
 def _iau_hg_model(alpha, gpar):
-    n = alpha.shape[0]
-    intensity = np.empty(n, dtype=np.float64)
+    # convert degrees to radians
+    alpha_rad = np.abs(alpha) * _D2R
+
+    # intermediate trig and weighting terms
+    sa = np.sin(alpha_rad)
+    fa = sa / (0.119 + 1.341 * sa - 0.754 * sa * sa)
+    tah = np.tan(alpha_rad * 0.5)
+    w = np.exp(-90.56 * tah * tah)
+    # smooth (s) and linear (l) components
+    phi1_s = 1.0 - 0.986 * fa
+    phi2_s = 1.0 - 0.238 * fa
+    phi1_l = np.exp(-3.332 * np.power(tah, 0.631))
+    phi2_l = np.exp(-1.862 * np.power(tah, 1.218))
+
+    phi1 = w * phi1_s + (1.0 - w) * phi1_l
+    phi2 = w * phi2_s + (1.0 - w) * phi2_l
+
+    # intensity = np.empty(n, dtype=np.float64)
     # onemgpar = 1.0 - gpar
-    phi1 = np.empty(n, dtype=np.float64)
-    phi2 = np.empty(n, dtype=np.float64)
-    for i in range(n):
-        # convert degrees to radians
-        ar = np.abs(alpha[i]) * _D2R
+    # phi1 = np.empty(n, dtype=np.float64)
+    # phi2 = np.empty(n, dtype=np.float64)
+    #     w = np.exp(-90.56 * tah * tah)
+    #     # smooth (s) and linear (l) components
+    #     phi1_s = 1.0 - 0.986 * fa
+    #     phi2_s = 1.0 - 0.238 * fa
+    #     phi1_l = np.exp(-3.332 * np.power(tah, 0.631))
+    #     phi2_l = np.exp(-1.862 * np.power(tah, 1.218))
 
-        # intermediate trig and weighting terms
-        sa = np.sin(ar)
-        fa = sa / (0.119 + 1.341 * sa - 0.754 * sa * sa)
-        tah = np.tan(ar * 0.5)
-        w = np.exp(-90.56 * tah * tah)
-
-        # smooth (s) and linear (l) components
-        phi1_s = 1.0 - 0.986 * fa
-        phi2_s = 1.0 - 0.238 * fa
-        phi1_l = np.exp(-3.332 * np.power(tah, 0.631))
-        phi2_l = np.exp(-1.862 * np.power(tah, 1.218))
-
-        # mix them
-        # intensity[i] = gpar[i] * (w * phi1_s + (1.0 - w) * phi1_l) + onemgpar[i] * (
-        #     w * phi2_s + (1.0 - w) * phi2_l
-        # )
-        phi1[i] = w * phi1_s + (1.0 - w) * phi1_l
-        phi2[i] = w * phi2_s + (1.0 - w) * phi2_l
+    #     # mix them
+    #     # intensity[i] = gpar[i] * (w * phi1_s + (1.0 - w) * phi1_l) + onemgpar[i] * (
+    #     #     w * phi2_s + (1.0 - w) * phi2_l
+    #     # )
+    #     phi1[i] = w * phi1_s + (1.0 - w) * phi1_l
+    #     phi2[i] = w * phi2_s + (1.0 - w) * phi2_l
 
     intensity = gpar * phi1 + (1.0 - gpar) * phi2
     return intensity
+
 
 def iau_hg_mag(hmag, alpha__deg, gpar=0.15, robs=1, rhel=1):
     """The IAU HG phase function model in magnitudes scale.
@@ -115,19 +126,32 @@ def iau_hg_mag(hmag, alpha__deg, gpar=0.15, robs=1, rhel=1):
     mag : ndarray
         The apparent magnitude of the object at the given phase angle.
     """
-    return _iau_hg_mag(np.asarray(hmag, dtype=np.float64), np.asarray(alpha__deg, dtype=np.float64), gpar, robs, rhel)
-
-@nb.njit(fastmath=True, cache=False)
-def _iau_hg_mag(hmag, alpha__deg, gpar=0.15, robs=1, rhel=1):
-    return (
-        hmag
-        + 5 * np.log10(robs * rhel)
-        - 2.5 * np.log10(iau_hg_model(alpha__deg, gpar))
+    return _iau_hg_mag(
+        np.asarray(hmag, dtype=np.float64),
+        np.asarray(alpha__deg, dtype=np.float64),
+        np.asarray(gpar, dtype=np.float64),
+        np.asarray(robs, dtype=np.float64),
+        np.asarray(rhel, dtype=np.float64)
     )
 
 
 @nb.njit(fastmath=True, cache=False)
-def _comet_mag(m1, m2, k1, k2, pc, alpha__deg, robs=1, rhel=1):
+def _iau_hg_mag(hmag, alpha__deg, gpar=0.15, robs=1., rhel=1.):
+    _hmag = np.asarray(hmag, dtype=np.float64)
+    _alpha = np.asarray(alpha__deg, dtype=np.float64)
+    _gpar = np.asarray(gpar, dtype=np.float64)
+    _robs = np.asarray(robs, dtype=np.float64)
+    _rhel = np.asarray(rhel, dtype=np.float64)
+
+    return (
+        _hmag
+        + 5 * np.log10(_robs * _rhel)
+        - 2.5 * np.log10(_iau_hg_model(_alpha, _gpar))
+    )
+
+
+@nb.njit(fastmath=True, cache=False)
+def _comet_mag(m1, m2, k1, k2, pc, alpha__deg, robs=1., rhel=1.):
     _rh = np.log10(rhel)
     _ro = np.log10(robs)
     tmag = m1 + 5 * _rh + k1 * _ro
@@ -135,7 +159,7 @@ def _comet_mag(m1, m2, k1, k2, pc, alpha__deg, robs=1, rhel=1):
     return tmag, nmag
 
 
-def comet_mag(m1, m2, k1, k2, pc, alpha__deg, robs=1, rhel=1):
+def comet_mag(m1, m2, k1, k2, pc, alpha__deg, robs=1., rhel=1.):
     """Calculate the apparent magnitude of a comet.
 
     Parameters
@@ -163,13 +187,13 @@ def comet_mag(m1, m2, k1, k2, pc, alpha__deg, robs=1, rhel=1):
     T-mag=M1 + 5*log10(delta) + k1*log10(r)
     N-mag=M2 + 5*log10(delta) + k2*log10(r) + pc*alpha
     """
-    m1 = np.asarray(m1, dtype=np.float64)
-    m2 = np.asarray(m2, dtype=np.float64)
-    k1 = np.asarray(k1, dtype=np.float64)
-    k2 = np.asarray(k2, dtype=np.float64)
-    pc = np.asarray(pc, dtype=np.float64)
-    alpha__deg = np.asarray(alpha__deg, dtype=np.float64)
-    robs = np.asarray(robs, dtype=np.float64)
-    rhel = np.asarray(rhel, dtype=np.float64)
-
-    return _comet_mag(m1, m2, k1, k2, pc, alpha__deg, robs, rhel)
+    return _comet_mag(
+        np.asarray(m1, dtype=np.float64),
+        np.asarray(m2, dtype=np.float64),
+        np.asarray(k1, dtype=np.float64),
+        np.asarray(k2, dtype=np.float64),
+        np.asarray(pc, dtype=np.float64),
+        np.asarray(alpha__deg, dtype=np.float64),
+        np.asarray(robs, dtype=np.float64),
+        np.asarray(rhel, dtype=np.float64)
+    )
