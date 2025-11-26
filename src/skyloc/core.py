@@ -30,6 +30,7 @@ _EPH_DTYPES = {
 def locator_twice(
     fovs,
     orb,
+    simstates=None,
     drop_major_asteroids=True,
     jd0=(np.mean, np.mean),
     include_asteroids=(False, True),
@@ -41,6 +42,21 @@ def locator_twice(
     calc_ephems_crude=False,
 ):
     """Simple utility function to run SSOLocator twice
+
+    Parameters
+    ----------
+    fovs : FOVCollection, iterable of `kete.fov.FOV`, or `kete.fov.FOVList`
+        Field of View(s) to check the propagated states against.
+
+    orb : `pandas.DataFrame`
+        Orbit file with columns of orbital elements. See
+        `query.fetch_orb()`.
+
+    simstates : `~kete.SimultaneousStates`, path-like, optional
+        If provided, use it as the initial states for propagation.
+        load the existing propagated states from the given
+        parquet file instead of propagating the orbits again for the first
+        calculation. Default is `None`.
 
     Notes
     -----
@@ -58,8 +74,16 @@ def locator_twice(
     Even for crude case, non_gravs=True is hard-coded because it may give big
     diffences. Anyways, there are few objects with non-grav terms.
     """
+    if simstates is not None:
+        if not isinstance(simstates, kete.SimultaneousStates):
+            simstates = kete.SimultaneousStates.load_parquet(simstates)
+
     sl1 = SSOLocator(
-        fovs=fovs, orb=orb, non_gravs=True, drop_major_asteroids=drop_major_asteroids
+        fovs=fovs,
+        orb=orb,
+        simstates=simstates,
+        non_gravs=True,
+        drop_major_asteroids=drop_major_asteroids
     )
     sl1.propagate_n_body(
         jd0=jd0[0],
@@ -76,6 +100,7 @@ def locator_twice(
     sl2 = SSOLocator(
         fovs=sl1.fovc_hasobj,
         orb=sl1.orb.loc[sl1.orb_infov_mask].copy(),
+        simstates=simstates,
         non_gravs=True,
         drop_major_asteroids=drop_major_asteroids,
     )
@@ -186,7 +211,7 @@ class SSOLocator(Locator):
     """
 
     def __init__(
-        self, fovs, orb, non_gravs=True, copy_orb=False, drop_major_asteroids=True
+        self, fovs, orb, simstates=None, non_gravs=True, copy_orb=False, drop_major_asteroids=True
     ):
         """
         Parameters
@@ -197,6 +222,9 @@ class SSOLocator(Locator):
         orb : `pandas.DataFrame`
             Orbit file with columns of orbital elements. See
             `query.fetch_orb()`.
+
+        simstates : `~kete.SimultaneousStates`, path-like, optional
+            If provided, use it as the initial states for propagation.
 
         non_gravs : list, bool, optional
             A list of non-gravitational terms for each object. If provided, then
@@ -227,6 +255,19 @@ class SSOLocator(Locator):
                 self.non_gravs = [None] * len(orb)
         else:
             self.non_gravs = list(non_gravs)
+
+        if simstates is None:
+            self.jd0 = None
+            self.states_propagated_jd0 = None
+        else:
+            try:
+                self.jd0 = simstates.jd
+                self.states_propagated_jd0 = simstates
+            except AttributeError:
+                # simstates in path like
+                simstates = kete.SimultaneousStates.load_parquet(simstates)
+                self.jd0 = simstates.jd
+                self.states_propagated_jd0 = simstates.states
 
     def _validate_orb(self, orb):
         """Validate the orbit DataFrame."""
@@ -313,12 +354,15 @@ class SSOLocator(Locator):
             output = str(output)
             output_exists = Path(output).exists()
 
-        if output_exists and not overwrite:
-            return kete.SimultaneousStates.load_parquet(output)
-
         if not isinstance(jd0, (float, int)):
             # Use the mean JD of the FOVs
             jd0 = jd0(self.fovc.fov_jds)
+
+        if output_exists and not overwrite:
+            states0 = kete.SimultaneousStates.load_parquet(output).states
+            self.jd0 = jd0
+            self.states_propagated_jd0 = states0
+            return
 
         states0 = kete.propagate_n_body(
             listmask(self.states_from_orb, objmask),
@@ -331,7 +375,7 @@ class SSOLocator(Locator):
         if output is not None or overwrite:
             kete.SimultaneousStates(states0).save_parquet(output)
             # Load the states from the file to ensure consistency
-            states0 = kete.SimultaneousStates.load_parquet(output)
+            states0 = kete.SimultaneousStates.load_parquet(output).states
 
         self.jd0 = jd0
         self.states_propagated_jd0 = states0
@@ -494,6 +538,10 @@ def _calc_ephem(
 
     # orb = orb.loc[orb["desig"].isin(geoms["desig"])]
     inmask = orb["desig"].isin(geoms["desig"])
+
+    if not any(inmask):
+        raise ValueError("No matching objects between `orb` and `simulstates`: "
+                         + f"{orb['desig'].tolist()} vs {geoms['desig'].tolist()}")
 
     orb["G"] = orb["G"].fillna(gpar_default)
     _orb = orb[["H", "G", "M1", "M2", "K1", "K2", "PC"]].to_numpy()[inmask, :]
