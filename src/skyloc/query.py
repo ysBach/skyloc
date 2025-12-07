@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .configs import KETE_SBDB2KETECOLS, KETE_SBDB_MINIMUM_FIELDS
+from .configs import KETE_SBDB2KETECOLS, KETE_SBDB_MINIMUM_FIELDS, cols2kete_sbdb
 from .jplsbdb import SBDBQuery, sanitize_sbdb, cols2bools_sbdb
 from .logging import get_logger
 
@@ -157,22 +157,22 @@ def fetch_orb(
             f"Server {server} is not supported. Only 'jplsbdb' is available."
         )
 
-    if verbose:
-        logger = get_logger(__name__, verbose=verbose)
+    # if verbose:
+    #     logger = get_logger(__name__, verbose=verbose)
 
-        logger.info("Number of objects, number of columns: %s", orb.shape)
-        logger.info("latest 'soln_date' [US/Pacific]     : %s", orb["soln_date"].max())
+    #     logger.info("Number of objects, number of columns: %s", orb.shape)
+    #     logger.info("latest 'soln_date' [US/Pacific]     : %s", orb["soln_date"].max())
 
-        n_ng = np.sum(m_ng)
+    #     n_ng = np.sum(m_ng)
 
-        logger.info("Number of            grav objects   : %d", orb.shape[0] - n_ng)
-        logger.info("Number of        non-grav objects   : %d", n_ng)
-        try:
-            n_com = np.sum(orb["is_comet"])
-        except KeyError:
-            n_com = np.sum(orb["kind"].str.startswith("c"))
-        logger.info("Number of            comets         : %d", n_com)
-        logger.info("Number of        non-comet objects  : %d", orb.shape[0] - n_com)
+    #     logger.info("Number of            grav objects   : %d", orb.shape[0] - n_ng)
+    #     logger.info("Number of        non-grav objects   : %d", n_ng)
+    #     try:
+    #         n_com = np.sum(orb["is_comet"])
+    #     except KeyError:
+    #         n_com = np.sum(orb["kind"].str.startswith("c"))
+    #     logger.info("Number of            comets         : %d", n_com)
+    #     logger.info("Number of        non-comet objects  : %d", orb.shape[0] - n_com)
 
     return orb, m_ng
 
@@ -187,6 +187,7 @@ def _fetch_orb_sbdb(
     neo2bool=True,
     pha2bool=True,
     twobody2bool=True,
+    cols2kete=True,
     engine="auto",
     compression="snappy",
     strict_column_match=False,
@@ -228,6 +229,7 @@ def _fetch_orb_sbdb(
             twobody2bool=twobody2bool,
             drop_impacted=drop_impacted,
             drop_unreliable=drop_unreliable,
+            cols2kete=cols2kete,
         )
 
         # Convert the columns to the appropriate dtypes
@@ -267,6 +269,8 @@ def _fetch_orb_sbdb(
         orb = sanitize_sbdb(
             orb, drop_impacted=drop_impacted, drop_unreliable=drop_unreliable
         )
+        if cols2kete:
+            orb = cols2kete_sbdb(orb)
 
         if strict_column_match:
             # If q_new.fields is not equal to orb.columns (DataFrame), except for
@@ -287,6 +291,7 @@ def _fetch_orb_sbdb(
             twobody2bool=twobody2bool,
             drop_impacted=drop_impacted,
             drop_unreliable=drop_unreliable,
+            cols2kete=True,
         )
 
         # === Append new entries to the existing DataFrame

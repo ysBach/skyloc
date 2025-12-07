@@ -16,6 +16,7 @@ __all__ = [
     "HORIZONS_DEPOCHS",
     "KETE_SBDB_MINIMUM_FIELDS",
     "KETE_SBDB2KETECOLS",
+    "cols2kete_sbdb",
     "SBDB_FIELDS",
     "SBDB_ALLOWED_SBCLASS",
     "IMPACTED",
@@ -153,6 +154,25 @@ KETE_SBDB2KETECOLS = {
     "om": "lon_node",
     "pdes": "desig",
 }
+
+
+def cols2kete_sbdb(orb):
+    """Convert SBDB column names to `kete` style column names.
+
+    Parameters
+    ----------
+    orb : pandas.DataFrame
+        The SBDB orbit table.
+
+    Returns
+    -------
+    orb : pandas.DataFrame
+        The SBDB orbit table with `kete` style column names.
+        See `KETE_SBDB2KETECOLS` in `skyloc.configs`.
+
+    """
+    return orb.rename(columns=KETE_SBDB2KETECOLS)
+
 # KETE_SINGLESBDB2KETECOLS = {
 # _PARAM_MAP = {
 #     "a1": "a1",
