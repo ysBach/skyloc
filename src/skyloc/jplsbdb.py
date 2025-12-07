@@ -11,6 +11,7 @@ from .configs import SBDB_FIELDS, SBDB_ALLOWED_SBCLASS, IMPACTED
 __all__ = [
     "SBDB_FIELDS",
     "SBDBQuery",
+    "cols2bools_sbdb"
     "sanitize_sbdb",
 ]
 
@@ -265,8 +266,8 @@ class SBDBQuery:
             Default is `True`.
 
         twobody2bool : bool, optional
-            If `True`, convert ``"two_body"`` column to boolean column. It is `True`
-            if the original value is "T", `False` otherwise.
+            If `True`, convert ``"two_body"`` column to boolean column. It is
+            `True` if the original value is "T", `False` otherwise.
             Default is `True`.
 
         drop_unreliable : bool, optional
@@ -304,33 +305,67 @@ class SBDBQuery:
         except Exception:
             failed_cols.append(c)
 
-        if kind2bools:
-            _str = self.orb["kind"].str
-            self.orb["is_comet"] = _str.startswith("c")
-            self.orb["has_number"] = _str.endswith("n")
-            self.orb.drop(columns=["kind"], inplace=True)
-
-        if neo2bool:
-            self.orb["neo"] = self.orb["neo"] == "Y"
-            # self.orb.drop(columns=["neo"], inplace=True)
-
-        if pha2bool:
-            self.orb["pha"] = self.orb["pha"] == "Y"
-            # self.orb.drop(columns=["pha"], inplace=True)
-
-        if twobody2bool:
-            self.orb["two_body"] = self.orb["two_body"] == "T"
-            # self.orb.drop(columns=["two_body"], inplace=True)
-
         if failed_cols:
             # The user should not see this warning unless there is a bug in the code.
             warn(f"Failed to convert columns {failed_cols} to SBDB_FIELDS types.")
+
+        self.orb = cols2bools_sbdb(
+            self.orb,
+            kind2bools=kind2bools,
+            neo2bool=neo2bool,
+            pha2bool=pha2bool,
+            twobody2bool=twobody2bool,
+        )
 
         self.orb = sanitize_sbdb(
             self.orb, drop_unreliable=drop_unreliable, drop_impacted=drop_impacted
         )
 
         return self.orb
+
+
+def cols2bools_sbdb(orb, kind2bools=True, neo2bool=True, pha2bool=True, twobody2bool=True):
+    """Convert some columns to boolean columns in-place.
+
+    Parameters
+    ----------
+    orb : pandas.DataFrame
+        The SBDB orbit table.
+
+    kind2bools : bool, optional
+            If `True`, convert ``"kind"`` column to two boolean columns::
+
+              * `is_comet`: `True` if ``"kind"`` starts with "c", not "a"
+              * `has_number`: `True` if ``"kind"`` ends with "n", not "u".
+
+            Default is `True`.
+
+    neo2bool, pha2bool : bool, optional
+        If `True`, convert ``"neo"`` and ``"pha"`` columns to boolean columns.
+        They are `True` if the original value is "Y", `False` otherwise.
+        Default is `True`.
+
+    twobody2bool : bool, optional
+        If `True`, convert ``"two_body"`` column to boolean column. It is
+        `True` if the original value is "T", `False` otherwise.
+        Default is `True`.
+    """
+    if kind2bools:
+        _str = orb["kind"].str
+        orb["is_comet"] = _str.startswith("c")
+        orb["has_number"] = _str.endswith("n")
+        orb.drop(columns=["kind"], inplace=True)
+
+    if neo2bool:
+        orb["neo"] = orb["neo"] == "Y"
+
+    if pha2bool:
+        orb["pha"] = orb["pha"] == "Y"
+
+    if twobody2bool:
+        orb["two_body"] = orb["two_body"] == "T"
+
+    return orb
 
 
 def sanitize_sbdb(orb, drop_unreliable=True, drop_impacted=True):
