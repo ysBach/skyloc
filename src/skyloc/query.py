@@ -1,8 +1,11 @@
 from pathlib import Path
+
+import numpy as np
 import pandas as pd
 
-from .jplsbdb import SBDBQuery, sanitize_sbdb
-from .configs import KETE_SBDB_MINIMUM_FIELDS, KETE_SBDB2KETECOLS
+from .configs import KETE_SBDB2KETECOLS, KETE_SBDB_MINIMUM_FIELDS
+from .jplsbdb import SBDBQuery, sanitize_sbdb, cols2bools_sbdb
+from .logging import get_logger
 
 __all__ = [
     "fetch_orb",
@@ -17,9 +20,14 @@ def fetch_orb(
     drop_impacted=True,
     drop_unreliable=True,
     kind2bools=True,
+    neo2bool=True,
+    pha2bool=True,
+    twobody2bool=True,
     engine="auto",
     compression="snappy",
     filters=None,
+    strict_column_match=False,
+    verbose=True,
 ):
     """Fetch the orbit data from API and save it to a parquet file.
 
@@ -48,12 +56,10 @@ def fetch_orb(
         "iaumpc".
         Default is "jplsbdb".
 
-    kind2bools : bool, optional
-        If `True`, convert JPL SBDB's "kind" field (one of ``{"an", "au", "cn",
-        "cu"}`` for asteroids and comets, numbered and unnumbered objects) to
-        boolean mask columns of ``"is_comet"`` and ``"has_number"``. The
-        original "kind" field is dropped.
-        Default is `True`.
+    kind2bools, neo2bool, pha2bool, twobody2bool : bool, optional
+        Whether to convert certain string columns to boolean columns. See
+        `jplsbdb.cols2bools_sbdb` for details.
+        Default is `True` for all.
 
     fields : list, optional
         List of fields to download from API. If `None`, it will
@@ -62,17 +68,10 @@ def fetch_orb(
         raise an error. Recommended to delete the existing file.
         Default is "simple" (see `~configs.SBDB_FIELDS`).
 
-    drop_impacted : bool, optional
-        If `True`, drop impacted objects based on the `IMPACTED` list.
-        Default is `True`.
-
-    drop_unreliable : bool, optional
-        If `True`, drop unreliable objects based on the following criteria:
-        - no magnitude-related information
-        - prefix is "D" or "X" (disappeared or lost comets)
-        - solution date is NaN (no reliable orbit)
-        - two body is "T" (two body assumed orbit - unreliable)
-        Default is `True`.
+    drop_impacted, drop_unreliable : bool, optional
+        Whether to drop objects that are marked as impacted or unreliable
+        in the SBDB data. See `jplsbdb.sanitize_sbdb` for details.
+        Defaults are `True` for both.
 
     engine, compression : str, optional
         The engine and compression to use for saving the parquet file
@@ -85,6 +84,14 @@ def fetch_orb(
         "==", "0")]`` to read only numbered asteroids and comets with the
         highest quality orbits.
         Default is `None`.
+
+    strict_column_match : bool, optional
+        (not matured yet) If `True`, when updating the existing parquet file,
+        check if the fields in the new query match the columns in the existing
+        DataFrame, except for the columns that are mapped by
+        `KETE_SBDB2KETECOLS`. This may be erroneous if the user changes the
+        `fields` parameter using `kind2bools`, because it removes `"kind"` and
+        adds `"is_comet"` and `"has_number"`...
 
     Returns
     -------
@@ -131,9 +138,13 @@ def fetch_orb(
             drop_impacted=drop_impacted,
             drop_unreliable=drop_unreliable,
             kind2bools=kind2bools,
+            neo2bool=neo2bool,
+            pha2bool=pha2bool,
+            twobody2bool=twobody2bool,
             engine=engine,
             compression=compression,
             filters=filters,
+            strict_column_match=strict_column_match,
         )
         m_ng = (
             (orb["A1"] != 0.0)
@@ -146,32 +157,24 @@ def fetch_orb(
             f"Server {server} is not supported. Only 'jplsbdb' is available."
         )
 
-    return orb, m_ng
+    if verbose:
+        logger = get_logger(__name__, verbose=verbose)
 
+        logger.info("Number of objects, number of columns: %s", orb.shape)
+        logger.info("latest 'soln_date' [US/Pacific]     : %s", orb["soln_date"].max())
 
-def _orb_postproc(orb, drop_impacted=False, drop_unreliable=False, kind2bools=False):
-    # Drop unreliable or impacted objects
-    orb = sanitize_sbdb(
-        orb, drop_impacted=drop_impacted, drop_unreliable=drop_unreliable
-    )
-    # Update column names to match the `kete` convention
-    orb = orb.rename(columns=KETE_SBDB2KETECOLS)
+        n_ng = np.sum(m_ng)
 
-    # Fill non-grav model params with 0.0 for convenience (when using
-    # NonGravModel.new_comet)
-    for col in ["A1", "A2", "A3", "DT"]:
+        logger.info("Number of            grav objects   : %d", orb.shape[0] - n_ng)
+        logger.info("Number of        non-grav objects   : %d", n_ng)
         try:
-            orb[col] = orb[col].fillna(0.0)
+            n_com = np.sum(orb["is_comet"])
         except KeyError:
-            continue
+            n_com = np.sum(orb["kind"].str.startswith("c"))
+        logger.info("Number of            comets         : %d", n_com)
+        logger.info("Number of        non-comet objects  : %d", orb.shape[0] - n_com)
 
-    if kind2bools:
-        _str = orb["kind"].str
-        orb["is_comet"] = _str.startswith("c")
-        orb["has_number"] = _str.endswith("n")
-        orb.drop(columns=["kind"], inplace=True)
-
-    return orb
+    return orb, m_ng
 
 
 def _fetch_orb_sbdb(
@@ -181,10 +184,19 @@ def _fetch_orb_sbdb(
     drop_impacted=True,
     drop_unreliable=True,
     kind2bools=True,
+    neo2bool=True,
+    pha2bool=True,
+    twobody2bool=True,
     engine="auto",
     compression="snappy",
+    strict_column_match=False,
     filters=None,
 ):
+    """Fetch the orbit data from JPL SBDB and save it to a parquet file.
+
+    Parameters
+    ----------
+    """
     float_cols = list(KETE_SBDB2KETECOLS.values())[:-1] + [
         "epoch",
         "H",
@@ -209,14 +221,19 @@ def _fetch_orb_sbdb(
     if not output.exists():
         # Default setting similar to kete.horizons.fetch_known_orbit_data:
         q = SBDBQuery(fields=fields, full_prec=True, sb_xfrag=True)
-        orb = q.query()
-
-        orb = _orb_postproc(
-            orb,
+        orb = q.query(
+            kind2bools=kind2bools,
+            neo2bool=neo2bool,
+            pha2bool=pha2bool,
+            twobody2bool=twobody2bool,
             drop_impacted=drop_impacted,
             drop_unreliable=drop_unreliable,
-            kind2bools=kind2bools,
         )
+
+        # Convert the columns to the appropriate dtypes
+        for col in float_cols:
+            if col in orb.columns:
+                orb[col] = orb[col].astype(float)
 
         orb.to_parquet(str(output), engine=engine, compression=compression)
         # TODO: Do we need full freedom for all the args for `to_parquet`?
@@ -239,23 +256,37 @@ def _fetch_orb_sbdb(
             sb_cdata='{"AND":["soln_date|GE|' + latest_date + '"]}',
         )
 
-        # If q_new.fields is not equal to orb.columns (DataFrame), except for
-        # kete-mapping columns, raise an error:
-        cols_new = set(q_new.fields) - set(KETE_SBDB2KETECOLS.keys())
-        cols_old = set(orb.columns) - set(KETE_SBDB2KETECOLS.values())
-        if cols_new != cols_old:
-            raise ValueError(
-                "The fields in the new query do not match the existing DataFrame columns.\n"
-                + f"Former: {cols_old}\n Latter: {cols_new}\n"
-                + "Please ensure the fields are consistent."
-            )
+        # Just in case, apply post-processing to original orb:
+        orb = cols2bools_sbdb(
+            orb,
+            kind2bools=kind2bools,
+            neo2bool=neo2bool,
+            pha2bool=pha2bool,
+            twobody2bool=twobody2bool,
+        )
+        orb = sanitize_sbdb(
+            orb, drop_impacted=drop_impacted, drop_unreliable=drop_unreliable
+        )
 
-        new_orb = q_new.query()
-        new_orb = _orb_postproc(
-            new_orb,
+        if strict_column_match:
+            # If q_new.fields is not equal to orb.columns (DataFrame), except for
+            # kete-mapping columns, raise an error:
+            cols_new = set(q_new.fields) - set(KETE_SBDB2KETECOLS.keys())
+            cols_old = set(orb.columns) - set(KETE_SBDB2KETECOLS.values())
+            if cols_new != cols_old:
+                raise ValueError(
+                    "The fields in the new query do not match the existing DataFrame "
+                    + f"columns.\n Former: {cols_old}\n Latter: {cols_new}\n"
+                    + "Please ensure the fields are consistent."
+                )
+
+        new_orb = q_new.query(
+            kind2bools=kind2bools,
+            neo2bool=neo2bool,
+            pha2bool=pha2bool,
+            twobody2bool=twobody2bool,
             drop_impacted=drop_impacted,
             drop_unreliable=drop_unreliable,
-            kind2bools=kind2bools,
         )
 
         # === Append new entries to the existing DataFrame
@@ -266,6 +297,7 @@ def _fetch_orb_sbdb(
         # Save the updated DataFrame to the parquet file (overwriting the old one)
         orb.to_parquet(str(output), engine=engine, compression=compression)
 
+    # Finally, read and return the DataFrame for consistency
     orb = pd.read_parquet(str(output), engine=engine, filters=filters)
 
     # Convert the columns to the appropriate dtypes
