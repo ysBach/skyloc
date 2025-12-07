@@ -14,7 +14,6 @@ __all__ = [
     "sanitize_sbdb",
 ]
 
-
 @lru_cache()
 def _query_cached(base_url, params_tuple):
     """Query with caching."""
@@ -234,7 +233,15 @@ class SBDBQuery:
 
         self._params = params
 
-    def query(self):
+    def query(
+        self,
+        kind2bools=True,
+        neo2bool=True,
+        pha2bool=True,
+        twobody2bool=True,
+        drop_unreliable=False,
+        drop_impacted=False,
+    ):
         """Query SBDB."""
         data = _query_cached(self.base_url, tuple(sorted(self._params.items())))
 
@@ -251,9 +258,31 @@ class SBDBQuery:
         except Exception:
             failed_cols.append(c)
 
+        if kind2bools:
+            _str = self.orb["kind"].str
+            self.orb["is_comet"] = _str.startswith("c")
+            self.orb["has_number"] = _str.endswith("n")
+            self.orb.drop(columns=["kind"], inplace=True)
+
+        if neo2bool:
+            self.orb["neo"] = self.orb["neo"] == "Y"
+            # self.orb.drop(columns=["neo"], inplace=True)
+
+        if pha2bool:
+            self.orb["pha"] = self.orb["pha"] == "Y"
+            # self.orb.drop(columns=["pha"], inplace=True)
+
+        if twobody2bool:
+            self.orb["two_body"] = self.orb["two_body"] == "T"
+            # self.orb.drop(columns=["two_body"], inplace=True)
+
         if failed_cols:
             # The user should not see this warning unless there is a bug in the code.
             warn(f"Failed to convert columns {failed_cols} to SBDB_FIELDS types.")
+
+        self.orb = sanitize_sbdb(
+            self.orb, drop_unreliable=drop_unreliable, drop_impacted=drop_impacted
+        )
 
         return self.orb
 
@@ -300,7 +329,7 @@ def sanitize_sbdb(orb, drop_unreliable=True, drop_impacted=True):
                 orb["prefix"].isin(["D", "X"])
                 | pd.isna(orb["soln_date"])
                 | (orb["soln_date"].str.len() < 10)
-                | (orb["two_body"] == "T")
+                | (orb["two_body"] | (orb["two_body"] == "T"))
             )
     # soln_date len is for those shorter than "yyyy-mm-dd"; ex: "None"
     if drop_impacted:
