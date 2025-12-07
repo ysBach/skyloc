@@ -174,97 +174,113 @@ KETE_SBDB2KETECOLS = {
 
 
 # TODO: Eventually some of these may be moved to astroquery.jplsbdb
+
+# ignore: column is extremely unlikely to be used in practice (empty for most
+#   objects, or redundant)
+# [a/c]only : column is (scientifically) only for asteroids/comets
+# simple: column is most likely to be used in practice
+#   - exception: diameter/albedo are hard-coded in kete, so to be consistent,
+#     they are included...
+# lite: a slightly lighter than "all" but heavier than "simple" set.
+# dtype: data type to convert to (i: int, f: float, s: str)
+# fillna: fillna value when the column is missing or empty - not added yet.
+
+#              i a c s l
+#              g o o i i
+#              n n n m t
+#              o l l p e
+#              r y y l
 _SBDB_FIELDS = pd.read_csv(
     StringIO(
-        """column,ignore,aonly,conly,simple,dtype
-spkid         ,0,0,0,1,i
-full_name     ,0,0,0,0,s
-kind          ,0,1,1,1,s
-pdes          ,0,0,0,1,s
-name          ,0,0,0,0,s
-prefix        ,0,0,1,1,s
-neo           ,0,0,0,0,s
-pha           ,0,1,0,0,s
-sats          ,0,0,0,0,i
-H             ,0,1,0,1,f
-G             ,0,1,0,1,f
-M1            ,0,0,1,1,f
-M2            ,0,0,1,1,f
-K1            ,0,0,1,1,f
-K2            ,0,0,1,1,f
-PC            ,0,0,1,1,f
-S0            ,1,0,0,0,s
-S0_sigma      ,1,0,0,0,s
-diameter      ,0,0,0,1,f
-extent        ,1,0,0,0,s
-albedo        ,0,0,0,1,f
-rot_per       ,0,0,0,0,f
-pole          ,1,0,0,0,s
-GM            ,1,0,0,0,f
-density       ,1,0,0,0,f
-BV            ,1,1,0,0,f
-UB            ,1,1,0,0,f
-IR            ,1,1,0,0,f
-spec_B        ,0,1,0,1,s
-spec_T        ,0,1,0,1,s
-H_sigma       ,0,1,0,0,f
-diameter_sigma,1,0,0,0,f
-orbit_id      ,0,0,0,1,s
-epoch         ,0,0,0,1,f
-epoch_mjd     ,1,0,0,0,f
-epoch_cal     ,1,0,0,0,s
-equinox       ,1,0,0,0,s
-e             ,0,0,0,1,f
-a             ,0,0,0,0,f
-q             ,0,0,0,1,f
-i             ,0,0,0,1,f
-om            ,0,0,0,1,f
-w             ,0,0,0,1,f
-ma            ,0,0,0,0,f
-ad            ,0,0,0,0,f
-n             ,1,0,0,0,f
-tp            ,0,0,0,1,f
-tp_cal        ,1,0,0,0,s
-per           ,0,0,0,0,f
-per_y         ,0,0,0,0,f
-moid          ,0,0,0,0,f
-moid_ld       ,1,0,0,0,f
-moid_jup      ,0,0,0,0,f
-t_jup         ,0,0,0,0,f
-sigma_e       ,0,0,0,0,f
-sigma_a       ,0,0,0,0,f
-sigma_q       ,0,0,0,0,f
-sigma_i       ,0,0,0,0,f
-sigma_om      ,0,0,0,0,f
-sigma_w       ,0,0,0,0,f
-sigma_ma      ,0,0,0,0,f
-sigma_ad      ,0,0,0,0,f
-sigma_n       ,1,0,0,0,f
-sigma_tp      ,0,0,0,0,f
-sigma_per     ,0,0,0,0,f
-class         ,0,0,0,1,s
-source        ,0,0,0,0,s
-soln_date     ,0,0,0,1,s
-producer      ,1,0,0,0,s
-data_arc      ,0,0,0,0,i
-first_obs     ,0,0,0,0,s
-last_obs      ,0,0,0,0,s
-n_obs_used    ,0,0,0,0,i
-n_del_obs_used,0,0,0,0,i
-n_dop_obs_used,0,0,0,0,i
-pe_used       ,0,0,0,0,s
-sb_used       ,0,0,0,0,s
-condition_code,0,0,0,1,s
-rms           ,0,0,0,1,f
-two_body      ,0,0,0,1,s
-A1            ,0,0,0,1,f
-A1_sigma      ,0,0,0,1,f
-A2            ,0,0,0,1,f
-A2_sigma      ,0,0,0,1,f
-A3            ,0,0,0,1,f
-A3_sigma      ,0,0,0,1,f
-DT            ,0,0,0,1,f
-DT_sigma      ,0,0,0,1,f"""
+        """column,ignore,aonly,conly,simple,lite,dtype
+spkid         ,0,0,0,1,1,i
+full_name     ,0,0,0,0,1,s
+kind          ,0,1,1,1,1,s
+pdes          ,0,0,0,1,1,s
+name          ,0,0,0,0,1,s
+prefix        ,0,0,1,1,1,s
+neo           ,0,0,0,0,1,s
+pha           ,0,1,0,0,1,s
+sats          ,0,0,0,0,1,i
+H             ,0,1,0,1,1,f
+G             ,0,1,0,1,1,f
+M1            ,0,0,1,1,1,f
+M2            ,0,0,1,1,1,f
+K1            ,0,0,1,1,1,f
+K2            ,0,0,1,1,1,f
+PC            ,0,0,1,1,1,f
+S0            ,1,0,0,0,0,s
+S0_sigma      ,1,0,0,0,0,s
+diameter      ,0,0,0,1,1,f
+extent        ,1,0,0,0,0,s
+albedo        ,0,0,0,1,1,f
+rot_per       ,0,0,0,0,1,f
+pole          ,1,0,0,0,0,s
+GM            ,1,0,0,0,0,f
+density       ,1,0,0,0,0,f
+BV            ,1,1,0,0,0,f
+UB            ,1,1,0,0,0,f
+IR            ,1,1,0,0,0,f
+spec_B        ,0,1,0,1,1,s
+spec_T        ,0,1,0,1,1,s
+H_sigma       ,0,1,0,0,0,f
+diameter_sigma,1,0,0,0,0,f
+orbit_id      ,0,0,0,1,1,s
+epoch         ,0,0,0,1,1,f
+epoch_mjd     ,1,0,0,0,0,f
+epoch_cal     ,1,0,0,0,0,s
+equinox       ,1,0,0,0,0,s
+e             ,0,0,0,1,1,f
+a             ,0,0,0,0,0,f
+q             ,0,0,0,1,1,f
+i             ,0,0,0,1,1,f
+om            ,0,0,0,1,1,f
+w             ,0,0,0,1,1,f
+ma            ,0,0,0,0,0,f
+ad            ,0,0,0,0,0,f
+n             ,1,0,0,0,0,f
+tp            ,0,0,0,1,0,f
+tp_cal        ,1,0,0,0,0,s
+per           ,0,0,0,0,0,f
+per_y         ,0,0,0,0,0,f
+moid          ,0,0,0,0,1,f
+moid_ld       ,1,0,0,0,0,f
+moid_jup      ,0,0,0,0,1,f
+t_jup         ,0,0,0,0,1,f
+sigma_e       ,0,0,0,0,1,f
+sigma_a       ,0,0,0,0,1,f
+sigma_q       ,0,0,0,0,1,f
+sigma_i       ,0,0,0,0,1,f
+sigma_om      ,0,0,0,0,1,f
+sigma_w       ,0,0,0,0,1,f
+sigma_ma      ,0,0,0,0,1,f
+sigma_ad      ,0,0,0,0,1,f
+sigma_n       ,1,0,0,0,1,f
+sigma_tp      ,0,0,0,0,1,f
+sigma_per     ,0,0,0,0,1,f
+class         ,0,0,0,1,1,s
+source        ,0,0,0,0,0,s
+soln_date     ,0,0,0,1,1,s
+producer      ,1,0,0,0,0,s
+data_arc      ,0,0,0,0,1,i
+first_obs     ,0,0,0,0,1,s
+last_obs      ,0,0,0,0,1,s
+n_obs_used    ,0,0,0,0,1,i
+n_del_obs_used,0,0,0,0,0,i
+n_dop_obs_used,0,0,0,0,0,i
+pe_used       ,0,0,0,0,0,s
+sb_used       ,0,0,0,0,0,s
+condition_code,0,0,0,1,1,s
+rms           ,0,0,0,1,1,f
+two_body      ,0,0,0,1,1,s
+A1            ,0,0,0,1,1,f
+A1_sigma      ,0,0,0,1,1,f
+A2            ,0,0,0,1,1,f
+A2_sigma      ,0,0,0,1,1,f
+A3            ,0,0,0,1,1,f
+A3_sigma      ,0,0,0,1,1,f
+DT            ,0,0,0,1,1,f
+DT_sigma      ,0,0,0,1,1,f"""
     ),
     dtype={
         "column": str,
@@ -272,6 +288,7 @@ DT_sigma      ,0,0,0,1,f"""
         "aonly": bool,
         "conly": bool,
         "simple": bool,
+        "lite": bool,
         "dtype": str,
     },
 )
@@ -286,7 +303,7 @@ SBDB_FIELDS["*"] = {
     c.strip(): t for c, t in zip(_SBDB_FIELDS["column"], _SBDB_FIELDS["dtype"])
 }
 for _name, _query in zip(
-    ["all", "ignore", "simple", "simple_ast", "simple_com", "all_ast", "all_com"],
+    ["all", "ignore", "simple", "simple_ast", "simple_com", "all_ast", "all_com", "lite", "lite_ast", "lite_com"],
     [
         "~ignore",
         "ignore",
@@ -295,6 +312,9 @@ for _name, _query in zip(
         "simple & ~aonly",
         "~ignore & ~conly",
         "~ignore & ~aonly",
+        "lite",
+        "lite & ~conly",
+        "lite & ~aonly",
     ],
 ):
     _df = _SBDB_FIELDS.query(_query)
@@ -309,6 +329,9 @@ for _name, _query in zip(
 *  `″simple_com"`: `"simple"` without the asteroid-related columns.
 *  `"all_ast"`: `"all"` without the comet-related columns.
 *  `"all_com"`: `"all"` without the asteroid-related columns.
+*  `"lite"`: A slightly lighter than "all" but heavier than "simple" set.
+*  `"lite_ast"`: `"lite"` without the comet-related columns.
+*  `"lite_com"`: `"lite"` without the asteroid-related columns.
 """
 
 SBDB_ALLOWED_SBCLASS = [
