@@ -14,6 +14,7 @@ __all__ = [
     "sanitize_sbdb",
 ]
 
+
 @lru_cache()
 def _query_cached(base_url, params_tuple):
     """Query with caching."""
@@ -78,9 +79,12 @@ class SBDBQuery:
                  practice.
               *  `"simple"`: Columns that are most likely to be used in
                  practice.
+              *  `"lite"`: num(columns) between "all" and "simple"...
               *  `″simple_ast"`: `"simple"` without the comet-related columns.
               *  `″simple_com"`: `"simple"` without the asteroid-related
                  columns.
+              *  `"lite_ast"`: `"lite"` without the comet-related columns.
+              *  `"lite_com"`: `"lite"` without the asteroid-related columns.
               *  `"all_ast"`: `"all"` without the comet-related columns.
               *  `"all_com"`: `"all"` without the asteroid-related columns.
 
@@ -242,7 +246,49 @@ class SBDBQuery:
         drop_unreliable=False,
         drop_impacted=False,
     ):
-        """Query SBDB."""
+        """Query SBDB.
+
+        Parameters
+        ----------
+        kind2bools : bool, optional
+            If `True`, convert ``"kind"`` column to two boolean columns::
+
+              * `is_comet`: `True` if ``"kind"`` starts with "c", not "a"
+              * `has_number`: `True` if ``"kind"`` ends with "n", not "u".
+
+            Default is `True`.
+
+        neo2bool, pha2bool : bool, optional
+            If `True`, convert ``"neo"`` and ``"pha"`` columns to boolean
+            columns. They are `True` if the original value is "Y", `False`
+            otherwise.
+            Default is `True`.
+
+        twobody2bool : bool, optional
+            If `True`, convert ``"two_body"`` column to boolean column. It is `True`
+            if the original value is "T", `False` otherwise.
+            Default is `True`.
+
+        drop_unreliable : bool, optional
+            If `True`, drop unreliable objects based on the following criteria
+            ..::
+
+              * no magnitude-related information (H, G, M1, M2, K1, K2, PC)
+              * prefix is "D" or "X" (disappeared or lost comets)
+              * solution date is NaN/"None" or no date available (no reliable orbit)
+              * two body is "T"/True (two body assumed orbit - unreliable)
+
+            Default is `False` (because some users may want all data).
+
+        drop_impacted : bool, optional
+            If `True`, drop impacted objects based on `IMPACTED` list.
+            Default is `False` (because some users may want all data).
+
+        Notes
+        -----
+        `XXX2bools` are for columns, `drop_XXX` are for rows.
+
+        """
         data = _query_cached(self.base_url, tuple(sorted(self._params.items())))
 
         if (ver := data["signature"]["version"]) != "1.0":
@@ -304,8 +350,8 @@ def sanitize_sbdb(orb, drop_unreliable=True, drop_impacted=True):
 
           - no magnitude-related information
           - prefix is "D" or "X" (disappeared or lost comets)
-          - solution date is NaN/"None" (no reliable orbit)
-          - two body is "T" (two body assumed orbit - unreliable)
+          - solution date is NaN/"None" or no date available (no reliable orbit)
+          - two body is "T"/True (two body assumed orbit - unreliable)
 
         Default is `True`.
     """
