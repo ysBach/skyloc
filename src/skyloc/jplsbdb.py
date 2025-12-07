@@ -11,7 +11,7 @@ from .configs import SBDB_FIELDS, SBDB_ALLOWED_SBCLASS, IMPACTED
 __all__ = [
     "SBDB_FIELDS",
     "SBDBQuery",
-    "cols2bools_sbdb"
+    "cols2bools_sbdb",
     "sanitize_sbdb",
 ]
 
@@ -295,20 +295,7 @@ class SBDBQuery:
         if (ver := data["signature"]["version"]) != "1.0":
             warn(f"Only ver 1.0 is guaranteed but got {ver}")
 
-        failed_cols = []
-        try:
-            self.orb = pd.DataFrame(data["data"], columns=data["fields"])
-            # For safety, convert all columns to the type in SBDB_FIELDS
-            for c in self.orb.columns:
-                self.orb[c] = self.orb[c].astype(SBDB_FIELDS["*"][c])
-
-        except Exception:
-            failed_cols.append(c)
-
-        if failed_cols:
-            # The user should not see this warning unless there is a bug in the code.
-            warn(f"Failed to convert columns {failed_cols} to SBDB_FIELDS types.")
-
+        self.orb = pd.DataFrame(data["data"], columns=data["fields"])
         self.orb = cols2bools_sbdb(
             self.orb,
             kind2bools=kind2bools,
@@ -321,10 +308,26 @@ class SBDBQuery:
             self.orb, drop_unreliable=drop_unreliable, drop_impacted=drop_impacted
         )
 
+        failed_cols = []
+        # For safety, convert all columns to the type in SBDB_FIELDS
+        for c in self.orb.columns:
+            try:
+                self.orb[c] = self.orb[c].astype(SBDB_FIELDS["*"][c])
+            except KeyError:
+                continue
+            except Exception:
+                failed_cols.append(c)
+
+        if failed_cols:
+            # The user should not see this warning unless there is a bug in the code.
+            warn(f"Failed to convert columns {failed_cols} to SBDB_FIELDS types.")
+
         return self.orb
 
 
-def cols2bools_sbdb(orb, kind2bools=True, neo2bool=True, pha2bool=True, twobody2bool=True):
+def cols2bools_sbdb(
+    orb, kind2bools=True, neo2bool=True, pha2bool=True, twobody2bool=True
+):
     """Convert some columns to boolean columns in-place.
 
     Parameters
@@ -333,12 +336,12 @@ def cols2bools_sbdb(orb, kind2bools=True, neo2bool=True, pha2bool=True, twobody2
         The SBDB orbit table.
 
     kind2bools : bool, optional
-            If `True`, convert ``"kind"`` column to two boolean columns::
+        If `True`, convert ``"kind"`` column to two boolean columns::
 
-              * `is_comet`: `True` if ``"kind"`` starts with "c", not "a"
-              * `has_number`: `True` if ``"kind"`` ends with "n", not "u".
+            * `is_comet`: `True` if ``"kind"`` starts with "c", not "a"
+            * `has_number`: `True` if ``"kind"`` ends with "n", not "u".
 
-            Default is `True`.
+        Default is `True`.
 
     neo2bool, pha2bool : bool, optional
         If `True`, convert ``"neo"`` and ``"pha"`` columns to boolean columns.
@@ -410,7 +413,7 @@ def sanitize_sbdb(orb, drop_unreliable=True, drop_impacted=True):
                 orb["prefix"].isin(["D", "X"])
                 | pd.isna(orb["soln_date"])
                 | (orb["soln_date"].str.len() < 10)
-                | (orb["two_body"] | (orb["two_body"] == "T"))
+                | ((orb["two_body"] is True) | (orb["two_body"] == "T"))
             )
     # soln_date len is for those shorter than "yyyy-mm-dd"; ex: "None"
     if drop_impacted:
