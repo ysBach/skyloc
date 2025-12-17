@@ -296,7 +296,7 @@ def horizons_vector(
             vel.append(_sta.vel)
 
         pos = np.array(pos) << u.au
-        vel = np.array(vel) << u.au/u.day
+        vel = np.array(vel) << u.au / u.day
 
         # Mimic Horizons query results (NOTE: Do we really have to....?)
         vecs = Table()
@@ -476,6 +476,7 @@ def horizons_quick(
         "DEC_rate": "ddec/dt",
         "r": "r_hel",
         "delta": "r_obs",
+        "EclLon": "hel_ecl_lon",
         "EclLat": "hel_ecl_lat",
         "ObsEclLon": "obs_ecl_lon",
         "ObsEclLat": "obs_ecl_lat",
