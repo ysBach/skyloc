@@ -6,7 +6,8 @@ import requests
 import pandas as pd
 import numpy as np
 
-from .configs import SBDB_FIELDS, SBDB_ALLOWED_SBCLASS, IMPACTED
+
+from .configs import SBDB_FIELDS, SBDB_ALLOWED_SBCLASS, IMPACTED, cols2kete_sbdb
 
 __all__ = [
     "SBDB_FIELDS",
@@ -14,6 +15,120 @@ __all__ = [
     "cols2bools_sbdb",
     "sanitize_sbdb",
 ]
+
+
+from astroquery.jplsbdb import SBDB
+def sbdb_single2orb(
+    targetid,
+    n_samples=100,
+    use_queried_desig=True,
+    id_type="search",
+    neo_only=False,
+    alternate_id=False,
+    solution_epoch=False,
+    validity=False,
+    alternate_orbit=False,
+    close_approach=False,
+    radar=False,
+    virtual_impactor=False,
+    discovery=False,
+    get_query_payload=False,
+    get_raw_response=False,
+    get_uri=False,
+    cache=True,
+):
+    """This is a wrapper for `astroquery.jplsbdb.SBDB.query` method.
+    See the `astroquery.jplsbdb.SBDB.query` method for details.
+
+    This function uses a few fixed args for that :
+    - `full_precision=True`
+    - `phys=True`
+    - `covariance="mat"`
+
+    Parameters
+    ----------
+    targetid : str
+        Target identifier or search string (if ``id_type='search'``)
+
+    n_samples : int, optional
+        The number of samples to take of the covariance.
+        Default is 100.
+
+
+    Returns
+    -------
+    res : `~collections.OrderedDict`
+        A dictionary holding all the parsed data.
+
+    Examples
+    --------
+    >>> from astroquery.jplsbdb import SBDB
+    >>> sbdb = SBDB.query('3552')  # doctest: +SKIP
+    >>> print(sbdb) # doctest: +SKIP
+    OrderedDict([('object', OrderedDict([('shortname', '3552 Don Quixote'), ('neo', True), ... ])
+
+    """
+
+    obj = SBDB.query(
+        targetid,
+        id_type=id_type,
+        neo_only=neo_only,
+        alternate_id=alternate_id,
+        full_precision=True,
+        solution_epoch=solution_epoch,
+        validity=validity,
+        alternate_orbit=alternate_orbit,
+        phys=True,
+        covariance="mat",
+        close_approach=close_approach,
+        radar=radar,
+        virtual_impactor=virtual_impactor,
+        discovery=discovery,
+        get_query_payload=get_query_payload,
+        get_raw_response=get_raw_response,
+        get_uri=get_uri,
+        cache=cache,
+    )
+    _obj = obj["object"]
+    _orb = obj["orbit"]
+    orb = {
+        "desig": _obj["des"] if use_queried_desig else targetid,
+        "A1": None,
+    }
+
+    orb = {"desig": _obj["des"], "A1": [None], "A2": [None], "A3": [None], "DT": [None]}
+    for key in ["M1", "M2", "K1", "K2", "PC"]:
+        orb[key] = [obj["phys_par"].get(key, np.nan)]
+
+    if obj["orbit"]["model_pars"]:
+        for key in ["A1", "A2", "A3"]:
+            val = obj["orbit"]["model_pars"].get(key, 0)
+            if not np.isnan(val):
+                val = val.to_value(u.au / u.d**2)
+            orb[key] = [val]
+        orb["alpha"] = [obj["orbit"]["model_pars"].get("ALN", 0.1112620426)]
+        orb["m"] = [obj["orbit"]["model_pars"].get("NM", 2.15)]
+        orb["n"] = [obj["orbit"]["model_pars"].get("NN", 5.093)]
+        orb["k"] = [obj["orbit"]["model_pars"].get("NK", 4.6142)]
+        orb["r_0"] = [obj["orbit"]["model_pars"].get("R0", 2.808)]
+        orb["dt"] = [obj["orbit"]["model_pars"].get("DT", 0 << u.d).to_value(u.d)]
+
+    orb["H"] = [obj["phys_par"].get("H", 11.93)]  # default value if not found
+    orb["G"] = [obj["phys_par"].get("G", 0.15)]
+    orb["ecc"] = [obj["orbit"]["elements"]["e"]]
+    orb["incl"] = [obj["orbit"]["elements"]["i"].to_value(u.deg)]
+    orb["peri_dist"] = [obj["orbit"]["elements"]["q"].to_value(u.au)]
+    orb["peri_arg"] = [obj["orbit"]["elements"]["w"].to_value(u.deg)]
+    orb["lon_node"] = [obj["orbit"]["elements"]["om"].to_value(u.deg)]
+    orb["peri_time"] = [obj["orbit"]["elements"]["tp"].to_value(u.d)]
+    orb["epoch"] = [obj["orbit"]["epoch"].to_value(u.d)]
+    pass
+    # full_precision=True, phys=True
+    if to_pandas:
+        orb["desig"] = [orb["desig"]]
+        # Making at least one into list - otherwise, pandas complains:
+        # ValueError: If using all scalar values, you must pass an index``
+        orb = pd.DataFrame.from_dict(orb)
 
 
 @lru_cache()
@@ -246,6 +361,7 @@ class SBDBQuery:
         twobody2bool=True,
         drop_unreliable=False,
         drop_impacted=False,
+        cols2kete=False,
     ):
         """Query SBDB.
 
@@ -285,6 +401,10 @@ class SBDBQuery:
             If `True`, drop impacted objects based on `IMPACTED` list.
             Default is `False` (because some users may want all data).
 
+        cols2kete : bool, optional
+            If `True`, convert column names to KETE style (e.g., ``"e"`` to
+            ``"ecc"``). see `KETE_SBDB2KETECOLS` in `skyloc.configs`.
+
         Notes
         -----
         `XXX2bools` are for columns, `drop_XXX` are for rows.
@@ -322,6 +442,9 @@ class SBDBQuery:
             # The user should not see this warning unless there is a bug in the code.
             warn(f"Failed to convert columns {failed_cols} to SBDB_FIELDS types.")
 
+        if cols2kete:
+            self.orb = cols2kete_sbdb(self.orb)
+
         return self.orb
 
 
@@ -353,20 +476,40 @@ def cols2bools_sbdb(
         `True` if the original value is "T", `False` otherwise.
         Default is `True`.
     """
+
+    def _exception(colname, exception):
+        if isinstance(exception, KeyError):
+            pass
+        else:
+            warn(f"Failed to convert '{colname}' column to boolean: {exception}")
+
     if kind2bools:
-        _str = orb["kind"].str
-        orb["is_comet"] = _str.startswith("c")
-        orb["has_number"] = _str.endswith("n")
-        orb.drop(columns=["kind"], inplace=True)
+        try:
+            _str = orb["kind"].str
+            orb["is_comet"] = _str.startswith("c")
+            orb["has_number"] = _str.endswith("n")
+            orb.drop(columns=["kind"], inplace=True)
+        except Exception as e:
+            _exception("kind", e)
 
     if neo2bool:
-        orb["neo"] = orb["neo"] == "Y"
+        try:
+            orb["neo"] = orb["neo"] == "Y"
+        except Exception as e:
+            _exception("neo", e)
 
     if pha2bool:
-        orb["pha"] = orb["pha"] == "Y"
+        try:
+            orb["pha"] = orb["pha"] == "Y"
+        except Exception as e:
+            _exception("pha", e)
+            pass
 
     if twobody2bool:
-        orb["two_body"] = orb["two_body"] == "T"
+        try:
+            orb["two_body"] = orb["two_body"] == "T"
+        except Exception as e:
+            _exception("two_body", e)
 
     return orb
 
