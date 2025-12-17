@@ -11,6 +11,7 @@ from .configs import SBDB_FIELDS, SBDB_ALLOWED_SBCLASS, IMPACTED
 __all__ = [
     "SBDB_FIELDS",
     "SBDBQuery",
+    "cols2bools_sbdb",
     "sanitize_sbdb",
 ]
 
@@ -79,9 +80,12 @@ class SBDBQuery:
                  practice.
               *  `"simple"`: Columns that are most likely to be used in
                  practice.
+              *  `"lite"`: num(columns) between "all" and "simple"...
               *  `″simple_ast"`: `"simple"` without the comet-related columns.
               *  `″simple_com"`: `"simple"` without the asteroid-related
                  columns.
+              *  `"lite_ast"`: `"lite"` without the comet-related columns.
+              *  `"lite_com"`: `"lite"` without the asteroid-related columns.
               *  `"all_ast"`: `"all"` without the comet-related columns.
               *  `"all_com"`: `"all"` without the asteroid-related columns.
 
@@ -234,28 +238,137 @@ class SBDBQuery:
 
         self._params = params
 
-    def query(self):
-        """Query SBDB."""
+    def query(
+        self,
+        kind2bools=True,
+        neo2bool=True,
+        pha2bool=True,
+        twobody2bool=True,
+        drop_unreliable=False,
+        drop_impacted=False,
+    ):
+        """Query SBDB.
+
+        Parameters
+        ----------
+        kind2bools : bool, optional
+            If `True`, convert ``"kind"`` column to two boolean columns::
+
+              * `is_comet`: `True` if ``"kind"`` starts with "c", not "a"
+              * `has_number`: `True` if ``"kind"`` ends with "n", not "u".
+
+            Default is `True`.
+
+        neo2bool, pha2bool : bool, optional
+            If `True`, convert ``"neo"`` and ``"pha"`` columns to boolean
+            columns. They are `True` if the original value is "Y", `False`
+            otherwise.
+            Default is `True`.
+
+        twobody2bool : bool, optional
+            If `True`, convert ``"two_body"`` column to boolean column. It is
+            `True` if the original value is "T", `False` otherwise.
+            Default is `True`.
+
+        drop_unreliable : bool, optional
+            If `True`, drop unreliable objects based on the following criteria
+            ..::
+
+              * no magnitude-related information (H, G, M1, M2, K1, K2, PC)
+              * prefix is "D" or "X" (disappeared or lost comets)
+              * solution date is NaN/"None" or no date available (no reliable orbit)
+              * two body is "T"/True (two body assumed orbit - unreliable)
+
+            Default is `False` (because some users may want all data).
+
+        drop_impacted : bool, optional
+            If `True`, drop impacted objects based on `IMPACTED` list.
+            Default is `False` (because some users may want all data).
+
+        Notes
+        -----
+        `XXX2bools` are for columns, `drop_XXX` are for rows.
+
+        """
         data = _query_cached(self.base_url, tuple(sorted(self._params.items())))
 
         if (ver := data["signature"]["version"]) != "1.0":
             warn(f"Only ver 1.0 is guaranteed but got {ver}")
 
-        failed_cols = []
-        try:
-            self.orb = pd.DataFrame(data["data"], columns=data["fields"])
-            # For safety, convert all columns to the type in SBDB_FIELDS
-            for c in self.orb.columns:
-                self.orb[c] = self.orb[c].astype(SBDB_FIELDS["*"][c])
+        self.orb = pd.DataFrame(data["data"], columns=data["fields"])
+        self.orb = cols2bools_sbdb(
+            self.orb,
+            kind2bools=kind2bools,
+            neo2bool=neo2bool,
+            pha2bool=pha2bool,
+            twobody2bool=twobody2bool,
+        )
 
-        except Exception:
-            failed_cols.append(c)
+        self.orb = sanitize_sbdb(
+            self.orb, drop_unreliable=drop_unreliable, drop_impacted=drop_impacted
+        )
+
+        failed_cols = []
+        # For safety, convert all columns to the type in SBDB_FIELDS
+        for c in self.orb.columns:
+            try:
+                self.orb[c] = self.orb[c].astype(SBDB_FIELDS["*"][c])
+            except KeyError:
+                continue
+            except Exception:
+                failed_cols.append(c)
 
         if failed_cols:
             # The user should not see this warning unless there is a bug in the code.
             warn(f"Failed to convert columns {failed_cols} to SBDB_FIELDS types.")
 
         return self.orb
+
+
+def cols2bools_sbdb(
+    orb, kind2bools=True, neo2bool=True, pha2bool=True, twobody2bool=True
+):
+    """Convert some columns to boolean columns in-place.
+
+    Parameters
+    ----------
+    orb : pandas.DataFrame
+        The SBDB orbit table.
+
+    kind2bools : bool, optional
+        If `True`, convert ``"kind"`` column to two boolean columns::
+
+            * `is_comet`: `True` if ``"kind"`` starts with "c", not "a"
+            * `has_number`: `True` if ``"kind"`` ends with "n", not "u".
+
+        Default is `True`.
+
+    neo2bool, pha2bool : bool, optional
+        If `True`, convert ``"neo"`` and ``"pha"`` columns to boolean columns.
+        They are `True` if the original value is "Y", `False` otherwise.
+        Default is `True`.
+
+    twobody2bool : bool, optional
+        If `True`, convert ``"two_body"`` column to boolean column. It is
+        `True` if the original value is "T", `False` otherwise.
+        Default is `True`.
+    """
+    if kind2bools:
+        _str = orb["kind"].str
+        orb["is_comet"] = _str.startswith("c")
+        orb["has_number"] = _str.endswith("n")
+        orb.drop(columns=["kind"], inplace=True)
+
+    if neo2bool:
+        orb["neo"] = orb["neo"] == "Y"
+
+    if pha2bool:
+        orb["pha"] = orb["pha"] == "Y"
+
+    if twobody2bool:
+        orb["two_body"] = orb["two_body"] == "T"
+
+    return orb
 
 
 def sanitize_sbdb(orb, drop_unreliable=True, drop_impacted=True):
@@ -275,8 +388,8 @@ def sanitize_sbdb(orb, drop_unreliable=True, drop_impacted=True):
 
           - no magnitude-related information
           - prefix is "D" or "X" (disappeared or lost comets)
-          - solution date is NaN/"None" (no reliable orbit)
-          - two body is "T" (two body assumed orbit - unreliable)
+          - solution date is NaN/"None" or no date available (no reliable orbit)
+          - two body is "T"/True (two body assumed orbit - unreliable)
 
         Default is `True`.
     """
@@ -300,7 +413,7 @@ def sanitize_sbdb(orb, drop_unreliable=True, drop_impacted=True):
                 orb["prefix"].isin(["D", "X"])
                 | pd.isna(orb["soln_date"])
                 | (orb["soln_date"].str.len() < 10)
-                | (orb["two_body"] == "T")
+                | ((orb["two_body"] is True) | (orb["two_body"] == "T"))
             )
     # soln_date len is for those shorter than "yyyy-mm-dd"; ex: "None"
     if drop_impacted:

@@ -329,6 +329,28 @@ def calc_geometries(
     return geoms
 
 
+def horizonscov2elems(obj, n_samples=1000, seed=None):
+    """ Generate samples from a covariance matrix for HorizonsProperties
+
+    Parameters
+    ----------
+    obj : `~kete.HorizonsProperties`
+        The HorizonsProperties object to sample from.
+
+    n_samples : int, optional
+        The number of samples to generate. Default is 1000.
+
+    seed : int, optional
+        The random seed for reproducibility. Default is None.
+
+    Notes
+    -----
+    kete only returns `state` while some may want just the elements.
+    """
+    pass
+
+
+
 '''
 Deprecated - left for reference
 I didn't know there was ra_dec_with_rates in the SimultaneousStates class.

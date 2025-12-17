@@ -26,7 +26,9 @@
 This project is heavily dependent on [kete](https://github.com/Caltech-IPAC/kete/tree/main#) and SPICE toolkits.
 <!-- ☝️ Replace with a more detailed description of your repository, including why it was made and whom its intended for.  ☝️ -->
 
-Initially motivated by NASA's SPHEREx mission (and NEO Surveyor mission).
+Initially motivated by NASA's SPHEREx mission (and NEO Surveyor mission - kete).
+
+["Why are your codes here so superficial and crude/messy?"](HISTORYNOTE.md)
 <!-- example links>
 [Website](INSERT WEBSITE LINK HERE) | [Docs/Wiki](INSERT DOCS/WIKI SITE LINK HERE) | [Discussion Board](INSERT DISCUSSION BOARD LINK HERE) | [Issue Tracker](INSERT ISSUE TRACKER LINK HERE)
 -->
@@ -62,3 +64,9 @@ To maintain consistent formatting, use the `black` formatter:
 
 ```bash
 black **/*.py
+```
+
+## Citation
+
+`skyloc` is not intended to be published as an independent, citable package. Depending on your usage, simply cite this repo as a URL link, but always consider citing any of the following as appropriate: [kete](https://github.com/Caltech-IPAC/kete/tree/main#), [spiceypy](https://github.com/AndrewAnnex/SpiceyPy), or [NAIF SPICE](https://naif.jpl.nasa.gov/naif/credit.html).
+
