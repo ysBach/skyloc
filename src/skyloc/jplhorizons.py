@@ -481,6 +481,8 @@ def horizons_quick(
         "ObsEclLon": "obs_ecl_lon",
         "ObsEclLat": "obs_ecl_lat",
         "V": "vmag",
+        "Tmag": "Tmag",
+        "Nmag": "Nmag",
         "Sky_motion": "sky_motion",
         "Sky_mot_PA": "sky_motion_pa",
     }
