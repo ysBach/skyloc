@@ -1,5 +1,6 @@
 from functools import cached_property
 from pathlib import Path
+import logging
 
 import kete
 import numpy as np
@@ -11,6 +12,8 @@ from .keteutils.propagate import calc_geometries, make_nongravs_models
 from .keteutils._util import KETE_LOADED_ASTEROIDS
 from .ssoflux import comet_mag, iau_hg_mag
 from .utils import listmask, tdb2utc
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["locator_twice", "SSOLocator", "SpiceLocator", "calc_ephems"]
 
@@ -371,10 +374,13 @@ class SSOLocator(Locator):
             suppress_errors=suppress_errors,
         )
 
+        logger.info("Propagated %d states to JD %.2f", len(states0), jd0)
+
         if output is not None or overwrite:
             kete.SimultaneousStates(states0).save_parquet(output)
             # Load the states from the file to ensure consistency
             states0 = kete.SimultaneousStates.load_parquet(output).states
+            logger.debug("Saved propagated states to %s", output)
 
         self.jd0 = jd0
         self.states_propagated_jd0 = states0
@@ -438,6 +444,8 @@ class SSOLocator(Locator):
 
         # objects in at least one of FOV
         self.orb_infov_mask = self.orb["desig"].isin(uniq_objids)
+
+        logger.info("FOV check: %d objects in %d FOVs", len(uniq_objids), len(fov2objs))
 
     def calc_ephems(
         self,
@@ -711,6 +719,7 @@ def calc_ephems(
     dfs = pd.concat(dfs, ignore_index=True)
 
     if add_jds:
+        # dfs["jd_utc"] = tdb2utc(dfs["jd_tdb"].values, format="jd").jd
         dfs["jd_utc"] = dfs["jd_tdb"].apply(lambda x: tdb2utc(x).jd)
 
     if sort_by is not None:
@@ -724,6 +733,7 @@ def calc_ephems(
         output = Path(output)
         if overwrite or not output.exists():
             dfs.to_parquet(output, **kwargs)
+            logger.debug("Saved ephemeris to %s", output)
 
     # return dfs
     return dfs, obsids

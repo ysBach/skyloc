@@ -2,12 +2,14 @@
 
 from functools import lru_cache
 from warnings import warn
+import logging
 import requests
 import pandas as pd
 import numpy as np
 
-
 from .configs import SBDB_FIELDS, SBDB_ALLOWED_SBCLASS, IMPACTED, cols2kete_sbdb
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "SBDB_FIELDS",
@@ -410,12 +412,17 @@ class SBDBQuery:
         `XXX2bools` are for columns, `drop_XXX` are for rows.
 
         """
+        logger.info("Querying SBDB...")
+        logger.debug("URL: %s", self.base_url)
+        logger.debug("Params: %s", self._params)
+
         data = _query_cached(self.base_url, tuple(sorted(self._params.items())))
 
         if (ver := data["signature"]["version"]) != "1.0":
             warn(f"Only ver 1.0 is guaranteed but got {ver}")
 
         self.orb = pd.DataFrame(data["data"], columns=data["fields"])
+        logger.info("Received %d objects (%d fields)", len(self.orb), len(data["fields"]))
         self.orb = cols2bools_sbdb(
             self.orb,
             kind2bools=kind2bools,
@@ -445,6 +452,7 @@ class SBDBQuery:
         if cols2kete:
             self.orb = cols2kete_sbdb(self.orb)
 
+        logger.debug("Final shape after processing: %s", self.orb.shape)
         return self.orb
 
 

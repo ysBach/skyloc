@@ -1,6 +1,7 @@
 from pathlib import Path
 from urllib import request
 import base64
+import logging
 import requests
 from astropy.table import vstack
 import numpy as np
@@ -12,6 +13,8 @@ from astropy.table import Table
 from .utils import tdb2utc
 from .keteutils import parse_frame, is_spk_loaded
 from .configs import HORIZONS_DEPOCHS, PKG_PATH
+
+logger = logging.getLogger(__name__)
 
 
 def iterator(it):
@@ -73,6 +76,8 @@ def download_jpl_de(dename="de440s", output=None, overwrite=False):
     # Ensure the output directory exists
     output.parent.mkdir(parents=True, exist_ok=True)
 
+    logger.info("Downloading %s...", dename)
+
     # Download the file
     url = f"https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/{dename}"
     response = request.urlopen(url)
@@ -80,7 +85,7 @@ def download_jpl_de(dename="de440s", output=None, overwrite=False):
     with open(output, "wb") as f:
         f.write(response.read())
 
-    # print(f"Downloaded {dename} to {output}")
+    logger.info("Saved to %s", output)
     return output, False
 
 
@@ -154,7 +159,7 @@ class HorizonsSPKQuery:
         if self.output is not None:
             with open(self.output, "wb" if decode else "w") as f:
                 f.write(self.spk)
-            # Logger.log(f"SPK data written to {self.output}")
+            logger.info("SPK written to %s", self.output)
 
 
 def horizons_vector(
@@ -284,7 +289,9 @@ def horizons_vector(
 
     is_loaded_obs, _obsid = is_spk_loaded(obsid)
     is_loaded_loc, _locid = is_spk_loaded(location)
+
     if try_spice and is_loaded_obs and is_loaded_loc:
+        logger.debug("Using SPICE kernels for %s @ %s", obsid, location)
         # Do not query at all
         _frame = parse_frame({"ecliptic": "Ecliptic", "earth": "Equatorial"}[refplane])
         pos = []

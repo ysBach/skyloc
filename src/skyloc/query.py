@@ -1,11 +1,13 @@
 from pathlib import Path
+import logging
 
 import numpy as np
 import pandas as pd
 
 from .configs import KETE_SBDB2KETECOLS, KETE_SBDB_MINIMUM_FIELDS, cols2kete_sbdb
 from .jplsbdb import SBDBQuery, sanitize_sbdb, cols2bools_sbdb
-from .logging import get_logger
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "fetch_orb",
@@ -27,7 +29,6 @@ def fetch_orb(
     compression="snappy",
     filters=None,
     strict_column_match=False,
-    verbose=True,
 ):
     """Fetch the orbit data from API and save it to a parquet file.
 
@@ -157,22 +158,18 @@ def fetch_orb(
             f"Server {server} is not supported. Only 'jplsbdb' is available."
         )
 
-    # if verbose:
-    #     logger = get_logger(__name__, verbose=verbose)
+    logger.info("Loaded %d objects (%d columns)", orb.shape[0], orb.shape[1])
 
-    #     logger.info("Number of objects, number of columns: %s", orb.shape)
-    #     logger.info("latest 'soln_date' [US/Pacific]     : %s", orb["soln_date"].max())
-
-    #     n_ng = np.sum(m_ng)
-
-    #     logger.info("Number of            grav objects   : %d", orb.shape[0] - n_ng)
-    #     logger.info("Number of        non-grav objects   : %d", n_ng)
-    #     try:
-    #         n_com = np.sum(orb["is_comet"])
-    #     except KeyError:
-    #         n_com = np.sum(orb["kind"].str.startswith("c"))
-    #     logger.info("Number of            comets         : %d", n_com)
-    #     logger.info("Number of        non-comet objects  : %d", orb.shape[0] - n_com)
+    # Expensive stats only at DEBUG level
+    if logger.isEnabledFor(10):  # logging.DEBUG = 10
+        n_ng = np.sum(m_ng)
+        logger.debug("Latest soln_date [US/Pacific]: %s", orb["soln_date"].max())
+        logger.debug("Grav: %d | Non-grav: %d", orb.shape[0] - n_ng, n_ng)
+        try:
+            n_com = np.sum(orb["is_comet"])
+        except KeyError:
+            n_com = np.sum(orb["kind"].str.startswith("c"))
+        logger.debug("Comets: %d | Non-comet: %d", n_com, orb.shape[0] - n_com)
 
     return orb, m_ng
 
