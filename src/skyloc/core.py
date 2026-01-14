@@ -39,6 +39,7 @@ def locator_twice(
     add_obsid=True,
     drop_obsindex=True,
     add_jds=True,
+    non_gravs=[True, True],
     calc_ephems_crude=False,
 ):
     """Simple utility function to run SSOLocator twice
@@ -71,8 +72,6 @@ def locator_twice(
     `include_asteroids=True` and a smaller `dt_limit`, to get more accurate
     results for the objects that are actually in the FoVs.
 
-    Even for crude case, non_gravs=True is hard-coded because it may give big
-    diffences. Anyways, there are few objects with non-grav terms.
     """
     if simstates is not None:
         if not isinstance(simstates, kete.SimultaneousStates):
@@ -82,7 +81,7 @@ def locator_twice(
         fovs=fovs,
         orb=orb,
         simstates=simstates,
-        non_gravs=True,
+        non_gravs=non_gravs[0],
         drop_major_asteroids=drop_major_asteroids
     )
     sl1.propagate_n_body(
@@ -101,7 +100,7 @@ def locator_twice(
         fovs=sl1.fovc_hasobj,
         orb=sl1.orb.loc[sl1.orb_infov_mask].copy(),
         simstates=simstates,
-        non_gravs=True,
+        non_gravs=non_gravs[1],
         drop_major_asteroids=drop_major_asteroids,
     )
     sl2.propagate_n_body(
