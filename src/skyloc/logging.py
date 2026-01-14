@@ -1,14 +1,43 @@
-"""Logging utilities for skyloc package.
+"""Logging utilities for skyloc package. (`help(skyloc.logging)`)
 
-Usage
------
-In each module:
+Enabling Log Output
+-------------------
+By default, skyloc logs are set to WARNING level (quiet). To see log messages:
+
+    >>> import skyloc
+    >>> skyloc.set_log_level("INFO")   # Basic progress info
+    >>> skyloc.set_log_level("DEBUG")  # Verbose debugging
+
+Saving Logs to File
+-------------------
+To also write logs to a file:
+
+    >>> import logging
+    >>> import skyloc
+    >>>
+    >>> file_handler = logging.FileHandler("skyloc.log")
+    >>> file_handler.setFormatter(
+    ...     logging.Formatter("[%(levelname)s] %(name)s: %(message)s")
+    ... )
+    >>> logging.getLogger("skyloc").addHandler(file_handler)
+    >>> skyloc.set_log_level("INFO")
+    >>>
+    >>> # Now logs go to both terminal AND skyloc.log
+
+Granular Control
+----------------
+Control individual module verbosity:
+
+    >>> import logging
+    >>> skyloc.set_log_level("WARNING")  # All quiet
+    >>> logging.getLogger("skyloc.query").setLevel(logging.DEBUG)  # Only query verbose
+
+Developer Note
+--------------
+In each module, use the standard pattern:
+
     import logging
     logger = logging.getLogger(__name__)
-
-To control logging level:
-    import skyloc
-    skyloc.set_log_level("INFO")   # or "DEBUG", logging.WARNING, etc.
 """
 
 import logging
