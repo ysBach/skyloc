@@ -56,8 +56,7 @@ def iau_hg_model(alpha, gpar=0.15):
     https://ui.adsabs.harvard.edu/abs/1989aste.conf..524B/abstract
     """
     return _iau_hg_model(
-        np.asarray(alpha, dtype=np.float64),
-        np.asarray(gpar, dtype=np.float64)
+        np.asarray(alpha, dtype=np.float64), np.asarray(gpar, dtype=np.float64)
     )
 
 
@@ -131,12 +130,12 @@ def iau_hg_mag(hmag, alpha__deg, gpar=0.15, robs=1, rhel=1):
         np.asarray(alpha__deg, dtype=np.float64),
         np.asarray(gpar, dtype=np.float64),
         np.asarray(robs, dtype=np.float64),
-        np.asarray(rhel, dtype=np.float64)
+        np.asarray(rhel, dtype=np.float64),
     )
 
 
 @nb.njit(fastmath=True, cache=False)
-def _iau_hg_mag(hmag, alpha__deg, gpar=0.15, robs=1., rhel=1.):
+def _iau_hg_mag(hmag, alpha__deg, gpar=0.15, robs=1.0, rhel=1.0):
     _hmag = np.asarray(hmag, dtype=np.float64)
     _alpha = np.asarray(alpha__deg, dtype=np.float64)
     _gpar = np.asarray(gpar, dtype=np.float64)
@@ -151,7 +150,7 @@ def _iau_hg_mag(hmag, alpha__deg, gpar=0.15, robs=1., rhel=1.):
 
 
 @nb.njit(fastmath=True, cache=False)
-def _comet_mag(m1, m2, k1, k2, pc, alpha__deg, robs=1., rhel=1.):
+def _comet_mag(m1, m2, k1, k2, pc, alpha__deg, robs=1.0, rhel=1.0):
     _rh = np.log10(rhel)
     _ro = np.log10(robs)
     tmag = m1 + 5 * _rh + k1 * _ro
@@ -159,7 +158,7 @@ def _comet_mag(m1, m2, k1, k2, pc, alpha__deg, robs=1., rhel=1.):
     return tmag, nmag
 
 
-def comet_mag(m1, m2, k1, k2, pc, alpha__deg, robs=1., rhel=1.):
+def comet_mag(m1, m2, k1, k2, pc, alpha__deg, robs=1.0, rhel=1.0):
     """Calculate the apparent magnitude of a comet.
 
     Parameters
@@ -195,5 +194,5 @@ def comet_mag(m1, m2, k1, k2, pc, alpha__deg, robs=1., rhel=1.):
         np.asarray(pc, dtype=np.float64),
         np.asarray(alpha__deg, dtype=np.float64),
         np.asarray(robs, dtype=np.float64),
-        np.asarray(rhel, dtype=np.float64)
+        np.asarray(rhel, dtype=np.float64),
     )

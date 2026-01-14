@@ -85,7 +85,7 @@ def locator_twice(
         orb=orb,
         simstates=simstates,
         non_gravs=non_gravs[0],
-        drop_major_asteroids=drop_major_asteroids
+        drop_major_asteroids=drop_major_asteroids,
     )
     sl1.propagate_n_body(
         jd0=jd0[0],
@@ -112,9 +112,7 @@ def locator_twice(
         include_asteroids=include_asteroids[1],
     )
     sl2.fov_state_check(dt_limit=dt_limit[1], include_asteroids=include_asteroids[1])
-    sl2.calc_ephems(
-        add_obsid=add_obsid, drop_obsindex=drop_obsindex, add_jds=add_jds
-    )
+    sl2.calc_ephems(add_obsid=add_obsid, drop_obsindex=drop_obsindex, add_jds=add_jds)
 
     return sl1, sl2
 
@@ -213,7 +211,13 @@ class SSOLocator(Locator):
     """
 
     def __init__(
-        self, fovs, orb, simstates=None, non_gravs=True, copy_orb=False, drop_major_asteroids=True
+        self,
+        fovs,
+        orb,
+        simstates=None,
+        non_gravs=True,
+        copy_orb=False,
+        drop_major_asteroids=True,
     ):
         """
         Parameters
@@ -547,8 +551,10 @@ def _calc_ephem(
     inmask = orb["desig"].isin(geoms["desig"])
 
     if not any(inmask):
-        raise ValueError("No matching objects between `orb` and `simulstates`: "
-                         + f"{orb['desig'].tolist()} vs {geoms['desig'].tolist()}")
+        raise ValueError(
+            "No matching objects between `orb` and `simulstates`: "
+            + f"{orb['desig'].tolist()} vs {geoms['desig'].tolist()}"
+        )
 
     orb["G"] = orb["G"].fillna(gpar_default)
     _orb = orb[["H", "G", "M1", "M2", "K1", "K2", "PC"]].to_numpy()[inmask, :]

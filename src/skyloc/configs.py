@@ -173,6 +173,7 @@ def cols2kete_sbdb(orb):
     """
     return orb.rename(columns=KETE_SBDB2KETECOLS)
 
+
 # KETE_SINGLESBDB2KETECOLS = {
 # _PARAM_MAP = {
 #     "a1": "a1",
@@ -325,7 +326,18 @@ SBDB_FIELDS["*"] = {
     c.strip(): t for c, t in zip(_SBDB_FIELDS["column"], _SBDB_FIELDS["dtype"])
 }
 for _name, _query in zip(
-    ["all", "ignore", "simple", "simple_ast", "simple_com", "all_ast", "all_com", "lite", "lite_ast", "lite_com"],
+    [
+        "all",
+        "ignore",
+        "simple",
+        "simple_ast",
+        "simple_com",
+        "all_ast",
+        "all_com",
+        "lite",
+        "lite_ast",
+        "lite_com",
+    ],
     [
         "~ignore",
         "ignore",

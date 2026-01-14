@@ -20,6 +20,8 @@ __all__ = [
 
 
 from astroquery.jplsbdb import SBDB
+
+
 def sbdb_single2orb(
     targetid,
     n_samples=100,
@@ -422,7 +424,9 @@ class SBDBQuery:
             warn(f"Only ver 1.0 is guaranteed but got {ver}")
 
         self.orb = pd.DataFrame(data["data"], columns=data["fields"])
-        logger.info("Received %d objects (%d fields)", len(self.orb), len(data["fields"]))
+        logger.info(
+            "Received %d objects (%d fields)", len(self.orb), len(data["fields"])
+        )
         self.orb = cols2bools_sbdb(
             self.orb,
             kind2bools=kind2bools,
