@@ -9,7 +9,7 @@ import pandas as pd
 from .configs import MINIMUM_ORB_COLS
 from .keteutils.fov import FOVCollection
 from .keteutils.propagate import calc_geometries, make_nongravs_models
-from .keteutils._util import KETE_LOADED_ASTEROIDS
+from .keteutils._util import get_kete_loaded_objects
 from .ssoflux import comet_mag, iau_hg_mag
 from .utils import listmask, tdb2utc
 
@@ -242,7 +242,7 @@ class SSOLocator(Locator):
             Default is `True`.
 
         drop_major_asteroids : bool, optional
-            If `True`, drop major asteroids (KETE_LOADED_ASTEROIDS) from the
+            If `True`, drop major asteroids (those loaded in kete) from the
             `orb`.
             Default is `True`.
         """
@@ -251,7 +251,8 @@ class SSOLocator(Locator):
             orb = orb.copy()
         self._validate_orb(orb)
         if drop_major_asteroids:
-            orb = orb[~orb.desig.isin(KETE_LOADED_ASTEROIDS)]
+            cache = get_kete_loaded_objects()
+            orb = orb[~orb.desig.isin(cache['asteroids'])]
         self._orb = orb
 
         if isinstance(non_gravs, bool):

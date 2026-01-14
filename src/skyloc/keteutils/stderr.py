@@ -2,7 +2,7 @@
 
 import sys
 from contextlib import contextmanager
-from ._util import KETE_LOADED_ASTEROIDS
+from ._util import get_kete_loaded_objects
 
 __all__ = [
     "filter_stderr",
@@ -63,7 +63,8 @@ def filter_stderr(filter_startswith):
 
 
 def filter_stderr_kete_loaded_asteroids():
+    cache = get_kete_loaded_objects()
     filter_startswith = []
-    for astnum_str in KETE_LOADED_ASTEROIDS:
+    for astnum_str in cache['asteroids']:
         filter_startswith.append(f'Impact detected between (Name("{astnum_str}"))  ')
     return filter_stderr(filter_startswith)

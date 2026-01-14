@@ -1,12 +1,6 @@
 import kete
 
-from ._util import (
-    KETE_LOADED_SPKS,
-    KETE_LOADED_SPKS_ID2NAME,
-    KETE_LOADED_SPKS_NAME,
-    KETE_LOADED_SPKS_NAME2ID,
-    parse_frame,
-)
+from ._util import get_kete_loaded_objects, parse_frame
 
 __all__ = ["is_spk_loaded"]
 
@@ -46,8 +40,15 @@ def is_spk_loaded(idstr, convert_to=None):
     elif idstr.startswith("@"):
         idstr = idstr[1:]
 
+    # Get lazy-loaded kete objects
+    cache = get_kete_loaded_objects()
+    spks = cache['spks']
+    spks_name = cache['spks_name']
+    name2id = cache['name2id']
+    id2name = cache['id2name']
+
     # Is this ID/NAME in the loaded sets?
-    is_loaded = idstr in KETE_LOADED_SPKS or idstr in KETE_LOADED_SPKS_NAME
+    is_loaded = idstr in spks or idstr in spks_name
 
     if convert_to is None:
         return is_loaded, idstr
@@ -55,9 +56,9 @@ def is_spk_loaded(idstr, convert_to=None):
     # Optionally convert
     convert_to = convert_to.lower()
     if convert_to == "id":
-        return is_loaded, KETE_LOADED_SPKS_NAME2ID.get(idstr, idstr)
+        return is_loaded, name2id.get(idstr, idstr)
     if convert_to == "name":
-        return is_loaded, KETE_LOADED_SPKS_ID2NAME.get(idstr, idstr)
+        return is_loaded, id2name.get(idstr, idstr)
 
     raise ValueError(f"Unknown conversion type: {convert_to}")
 
