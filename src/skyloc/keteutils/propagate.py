@@ -101,17 +101,29 @@ def make_nongravs_models(
 
     non_gravs = np.array([None] * nobj)
 
-    for i, (_, row) in zip(np.where(m_ng)[0], orb_ng.iterrows()):
+    # Extract column arrays once (much faster than .iterrows() row-by-row access)
+    ng_indices = np.where(m_ng)[0]
+    a1_vals = orb_ng[c_a1].values
+    a2_vals = orb_ng[c_a2].values
+    a3_vals = orb_ng[c_a3].values
+    dt_vals = orb_ng[c_dt].values
+    alpha_vals = orb_ng[c_alpha].values
+    r0_vals = orb_ng[c_r0].values
+    m_vals = orb_ng[c_m].values
+    n_vals = orb_ng[c_n].values
+    k_vals = orb_ng[c_k].values
+
+    for j, i in enumerate(ng_indices):
         ng = kete.propagation.NonGravModel.new_comet(
-            a1=row[c_a1],
-            a2=row[c_a2],
-            a3=row[c_a3],
-            dt=row[c_dt],
-            alpha=row[c_alpha],
-            r_0=row[c_r0],
-            m=row[c_m],
-            n=row[c_n],
-            k=row[c_k],
+            a1=a1_vals[j],
+            a2=a2_vals[j],
+            a3=a3_vals[j],
+            dt=dt_vals[j],
+            alpha=alpha_vals[j],
+            r_0=r0_vals[j],
+            m=m_vals[j],
+            n=n_vals[j],
+            k=k_vals[j],
         )
         non_gravs[i] = ng
 
@@ -199,6 +211,7 @@ def orb2state_propagate(
 def calc_geometries(
     simulstates,
     center=10,
+    do_alpha=True,
     do_dists=True,
     do_radec=True,
     do_hel_ecl=True,
@@ -215,11 +228,13 @@ def calc_geometries(
     center : int, optional
         The center of the light source. Default is 10 (Sun).
 
-    do_dists, do_radec, do_hel_ecl, do_obs_ecl : bool, optional
-        If `True`, calculate the heliocentric and observer-centric distances,
-        right ascension and declination, heliocentric ecliptic coordinates,
-        and observer-centric ecliptic coordinates, respectively.
-        Default is `True` for all.
+    do_alpha, do_dists, do_radec, do_hel_ecl, do_obs_ecl : bool, optional
+        If `True`, calculate the phase angle, heliocentric/observer-centric
+        distances, right ascension and declination, heliocentric ecliptic
+        coordinates, and observer-centric ecliptic coordinates, respectively.
+        Default is `True` for all. Note that if `do_alpha=True`, distances
+        (r_hel, r_obs) are always computed and included in the output because
+        they are required for the phase angle calculation.
 
     rates_in_arcsec_per_min : bool, optional
         If `True`, the rates of right ascension and declination will be
@@ -265,53 +280,70 @@ def calc_geometries(
     else:
         sun2obs_pos = _obs.pos
 
-    geoms = dict(desig=[], alpha=[])
-    if do_dists:
-        geoms["r_hel"] = []
-        geoms["r_obs"] = []
-    if do_radec:
-        geoms["ra"] = []
-        geoms["dec"] = []
-    if do_hel_ecl:
-        geoms["hel_ecl_lon"] = []
-        geoms["hel_ecl_lat"] = []
-    if do_obs_ecl:
-        geoms["obs_ecl_lon"] = []
-        geoms["obs_ecl_lat"] = []
+    # Convert observer position to numpy array (3,)
+    sun2obs_xyz = np.array([sun2obs_pos[0], sun2obs_pos[1], sun2obs_pos[2]])
 
-    for _state in simulstates:
+    n_states = len(simulstates.states)
+    desigs = []
+    sun2obj_xyz = np.empty((n_states, 3), dtype=np.float64)
+
+    for i, _state in enumerate(simulstates):
+        desigs.append(_state.desig)
         # heliocentric position
         if _state.center_id != center:
             # Generally _state is relative to the Sun by kete, so it will be
             # rare for this `change_center` (~10us) to actually be calculated.
-            sun2obj_pos = _state.change_center(center).pos
+            _pos = _state.change_center(center).pos
         else:
-            sun2obj_pos = _state.pos
-        # Phase angle alpha
-        obs2obj_pos = sun2obj_pos - sun2obs_pos
-        geoms["desig"].append(_state.desig)
-        geoms["alpha"].append((-obs2obj_pos).angle_between(-sun2obj_pos))
+            _pos = _state.pos
+        sun2obj_xyz[i, 0] = _pos[0]
+        sun2obj_xyz[i, 1] = _pos[1]
+        sun2obj_xyz[i, 2] = _pos[2]
+
+    # Observer-to-object vectors: obs2obj = sun2obj - sun2obs
+    # Shape: (n_states, 3)
+    obs2obj_xyz = sun2obj_xyz - sun2obs_xyz
+
+    # Initialize result dictionary
+    geoms = {"desig": np.array(desigs)}
+
+    # Phase angle alpha: angle between (-obs2obj) and (-sun2obj)
+    # This is the Sun-Object-Observer angle
+    # cos(alpha) = dot(-obs2obj, -sun2obj) / (|obs2obj| * |sun2obj|)
+    #            = dot(obs2obj, sun2obj) / (|obs2obj| * |sun2obj|)
+    if do_alpha or do_dists:
+        # NOTE: r_hel and r_obs are computed if do_alpha or do_dists is True.
+        r_hel = np.linalg.norm(sun2obj_xyz, axis=1)  # |sun2obj|
+        r_obs = np.linalg.norm(obs2obj_xyz, axis=1)  # |obs2obj|
+
+        if do_alpha:
+            # Dot product of obs2obj and sun2obj for each object
+            dot_product = np.sum(obs2obj_xyz * sun2obj_xyz, axis=1)
+            # Clamp to [-1, 1] to avoid numerical issues with arccos
+            cos_alpha = dot_product / (r_obs * r_hel)
+            cos_alpha = np.clip(cos_alpha, -1.0, 1.0)
+            geoms["alpha"] = np.rad2deg(np.arccos(cos_alpha))
+
         # Helio/observer-centric distances
-        if do_dists:
-            geoms["r_hel"].append(sun2obj_pos.r)
-            geoms["r_obs"].append(obs2obj_pos.r)
-        # # radec
-        # if do_radec:
-        #     v_eq = obs2obj.as_equatorial
-        #     geoms["ra"].append(v_eq.ra)
-        #     geoms["dec"].append(v_eq.dec)
-        # Heliocentric ecliptic coordinates of the object
-        if do_hel_ecl:
-            geoms["hel_ecl_lon"].append(sun2obj_pos.lon)
-            geoms["hel_ecl_lat"].append(sun2obj_pos.lat)
-        # Observer-centric ecliptic coordinates of the object
-        if do_obs_ecl:
-            geoms["obs_ecl_lon"].append(obs2obj_pos.lon)
-            geoms["obs_ecl_lat"].append(obs2obj_pos.lat)
+        # If do_alpha=True, distances are always returned (required for alpha)
+        if do_alpha or do_dists:
+            geoms["r_hel"] = r_hel
+            geoms["r_obs"] = r_obs
 
-    for k, v in geoms.items():
-        geoms[k] = np.array(v)
+    # Heliocentric ecliptic coordinates of the object
+    # lon = atan2(y, x), lat = atan2(z, sqrt(x^2 + y^2))
+    if do_hel_ecl:
+        geoms["hel_ecl_lon"] = np.rad2deg(np.arctan2(sun2obj_xyz[:, 1], sun2obj_xyz[:, 0]))
+        xy_hel = np.hypot(sun2obj_xyz[:, 0], sun2obj_xyz[:, 1])
+        geoms["hel_ecl_lat"] = np.rad2deg(np.arctan2(sun2obj_xyz[:, 2], xy_hel))
 
+    # Observer-centric ecliptic coordinates of the object
+    if do_obs_ecl:
+        geoms["obs_ecl_lon"] = np.rad2deg(np.arctan2(obs2obj_xyz[:, 1], obs2obj_xyz[:, 0]))
+        xy_obs = np.hypot(obs2obj_xyz[:, 0], obs2obj_xyz[:, 1])
+        geoms["obs_ecl_lat"] = np.rad2deg(np.arctan2(obs2obj_xyz[:, 2], xy_obs))
+
+    # RA/Dec and rates from kete's built-in method (already vectorized)
     if do_radec:
         radec = np.atleast_2d(simulstates.ra_dec_with_rates)
         geoms["ra"] = radec[:, 0]
