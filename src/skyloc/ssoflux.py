@@ -32,7 +32,7 @@ def iau_hg_model(alpha, gpar=0.15):
     is given by the following equation:
 
     .. math::
-        \Phi_\mathrm{HG}(\alpha, G) = G \Phi_{HG1}(\alpha) + (1-G) \Phi_{HG2}(\alpha)
+        \Phi_\mathrm{HG}(\alpha, G) = (1-G) \Phi_{HG1}(\alpha) + G \Phi_{HG2}(\alpha)
 
     where
 
@@ -98,7 +98,9 @@ def _iau_hg_model(alpha, gpar):
     #     phi1[i] = w * phi1_s + (1.0 - w) * phi1_l
     #     phi2[i] = w * phi2_s + (1.0 - w) * phi2_l
 
-    intensity = gpar * phi1 + (1.0 - gpar) * phi2
+    # intensity = gpar * phi1 + (1.0 - gpar) * phi2  <-- OLD BUGGY
+    # Correct formula: (1 - G) * Phi1 + G * Phi2
+    intensity = (1.0 - gpar) * phi1 + gpar * phi2
     return intensity
 
 
@@ -151,10 +153,11 @@ def _iau_hg_mag(hmag, alpha__deg, gpar=0.15, robs=1.0, rhel=1.0):
 
 @nb.njit(fastmath=True, cache=False)
 def _comet_mag(m1, m2, k1, k2, pc, alpha__deg, robs=1.0, rhel=1.0):
+    """ magnitude = M + 5*log10(robs) + k*log10(rhel) [+ pc * alpha__deg] """
     _rh = np.log10(rhel)
     _ro = np.log10(robs)
-    tmag = m1 + 5 * _rh + k1 * _ro
-    nmag = m2 + 5 * _rh + k2 * _ro + pc * alpha__deg
+    tmag = m1 + 5 * _ro + k1 * _rh
+    nmag = m2 + 5 * _ro + k2 * _rh + pc * alpha__deg
     return tmag, nmag
 
 
