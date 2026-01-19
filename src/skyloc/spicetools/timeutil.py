@@ -32,13 +32,9 @@ def times2et(times, return_c=False, **kwargs):
         Returned only if `return_c` is `True`.
     """
     times = Time(np.atleast_1d(times), **kwargs)
+    # Vectorize using list comprehension (faster than append in loop)
+    ets = [sp.str2et(_t) for _t in times.iso]
     if return_c:
-        ets = []
-        ets_c = []
-        for _t in times.iso:
-            _et = sp.str2et(_t)
-            _etc = ctypes.c_double(_et)
-            ets.append(_et)
-            ets_c.append(_etc)
+        ets_c = [ctypes.c_double(_et) for _et in ets]
         return times, ets, ets_c
-    return times, [sp.str2et(_t) for _t in times.iso]
+    return times, ets
