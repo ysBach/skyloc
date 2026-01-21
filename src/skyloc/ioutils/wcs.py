@@ -403,11 +403,14 @@ class FastTanSipWCS:
         Mimics the interface of `astropy.wcs.WCS.all_pix2world`.
         """
         # Prepare inputs
+        x = np.asanyarray(x)
+        y = np.asanyarray(y)
+        orig_shape = x.shape
+
         x = np.atleast_1d(x).astype(np.float64)
         y = np.atleast_1d(y).astype(np.float64)
 
         # Optim: Flatten to 1D to help Numba vectorization
-        orig_shape = x.shape
         x_flat = x.ravel()
         y_flat = y.ravel()
 
@@ -438,10 +441,13 @@ class FastTanSipWCS:
         Mimics the interface of `astropy.wcs.WCS.all_world2pix`.
         """
         # Prepare inputs
+        ra = np.asanyarray(ra)
+        dec = np.asanyarray(dec)
+        orig_shape = ra.shape
+
         ra = np.atleast_1d(ra).astype(np.float64)
         dec = np.atleast_1d(dec).astype(np.float64)
 
-        orig_shape = ra.shape
         ra_flat = ra.ravel()
         dec_flat = dec.ravel()
 
