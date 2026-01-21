@@ -1,16 +1,75 @@
 from pathlib import Path
+import logging
 
 import kete
 import numpy as np
 import pandas as pd
 
+from ._constants import KETE_ASTEROIDS_PHYSICS
+
+logger = logging.getLogger(__name__)
+
 __all__ = [
     "make_nongravs_models",
     "orb2state_propagate",
     "calc_geometries",
+    "replace_loaded_with_spice",
 ]
 
 DEGPERDAY2ARCSECPERMIN = 3600 / (24 * 60)
+
+
+def replace_loaded_with_spice(states, jd):
+    """Replace states of loaded asteroids with SPICE data.
+
+    When `include_asteroids=True` is used in `kete.propagate_n_body`, the 5 large
+    asteroids (Ceres, Pallas, Vesta, Hygiea, Interamnia) are used as perturbers.
+    If these objects are also being propagated, `kete` may produce NaN or inaccurate
+    states due to self-collision detection. This function replaces those states
+    with authoritative SPICE data.
+
+    Parameters
+    ----------
+    states : list of `~kete.State`
+        The propagated states from `kete.propagate_n_body`.
+
+    jd : float
+        The JD (TDB) at which to fetch SPICE states.
+
+    Returns
+    -------
+    new_states : list of `~kete.State`
+        States with loaded asteroids replaced by SPICE data.
+
+    Notes
+    -----
+    This function checks each state's designation against the 5 loaded asteroids
+    (by SBDB number or name) and replaces matching states with SPICE-fetched data.
+    Non-matching states are passed through unchanged.
+    """
+    # Loaded asteroid designations (SBDB numbers) and names
+    loaded_desigs = set(KETE_ASTEROIDS_PHYSICS.keys())  # {"1", "2", "4", "10", "704"}
+    loaded_names = {v["name"]: d for d, v in KETE_ASTEROIDS_PHYSICS.items()}
+
+    new_states = []
+    for state in states:
+        desig = state.desig
+        matched_name = None
+
+        # Check by designation (e.g., "2") or by name (e.g., "pallas")
+        if desig in loaded_desigs:
+            matched_name = KETE_ASTEROIDS_PHYSICS[desig]["name"]
+        elif desig.lower() in loaded_names:
+            matched_name = desig.lower()
+
+        if matched_name is not None:
+            spice_state = kete.spice.get_state(matched_name, jd)
+            new_states.append(spice_state)
+            logger.debug("Replaced n-body state for %s with SPICE data", desig)
+        else:
+            new_states.append(state)
+
+    return new_states
 
 
 def make_nongravs_models(
