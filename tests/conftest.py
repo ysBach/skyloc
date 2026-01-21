@@ -45,6 +45,67 @@ def sample_orb_asteroid():
 
 
 @pytest.fixture
+def sample_orb_eros():
+    """Create a sample orbit DataFrame for 433 Eros.
+
+    Elements from JPL SBDB (epoch JD 2461000.5) with full precision.
+    """
+    return pd.DataFrame({
+        "desig": ["433 Eros"],
+        "ecc": [0.2228359407071628],
+        "incl": [10.82846651399785],
+        "peri_dist": [1.13319923411471],
+        "peri_arg": [178.9297536744151],
+        "lon_node": [304.2701025753316],
+        "peri_time": [2461088.8312870553],
+        "epoch": [2461000.5],
+        "H": [10.38],
+        "G": [0.46],
+        "M1": [np.nan],
+        "M2": [np.nan],
+        "K1": [np.nan],
+        "K2": [np.nan],
+        "PC": [np.nan],
+        "A1": [0.0],
+        "A2": [0.0],
+        "A3": [0.0],
+        "DT": [0.0],
+    })
+
+
+@pytest.fixture
+def sample_orb_vesta():
+    """Create a sample orbit DataFrame for 4 Vesta (a loaded asteroid).
+
+    Vesta is one of the 5 large asteroids loaded by kete as perturbers.
+    This is used to test SPICE replacement functionality.
+
+    Elements from JPL SBDB (epoch JD 2461000.5).
+    """
+    return pd.DataFrame({
+        "desig": ["4"],  # Use number designation to match KETE_ASTEROIDS_PHYSICS
+        "ecc": [0.08872646074073799],
+        "incl": [7.140497108622466],
+        "peri_dist": [2.151630078720154],
+        "peri_arg": [150.7290823346889],
+        "lon_node": [103.8092024623738],
+        "peri_time": [2461217.7097671945],
+        "epoch": [2461000.5],
+        "H": [3.25],
+        "G": [0.32],
+        "M1": [np.nan],
+        "M2": [np.nan],
+        "K1": [np.nan],
+        "K2": [np.nan],
+        "PC": [np.nan],
+        "A1": [0.0],
+        "A2": [0.0],
+        "A3": [0.0],
+        "DT": [0.0],
+    })
+
+
+@pytest.fixture
 def sample_orb_comet():
     """Create a sample orbit DataFrame for a single comet (Halley).
 
@@ -121,6 +182,30 @@ def sample_fovlist(sample_jd_tdb):
         pointing = kete.Vector.from_lat_lon(0.0, 180.0 + i * 10)
         fovs.append(kete.fov.ConeFOV(observer=observer, pointing=pointing, angle=1.0))
     return kete.fov.FOVList(fovs)
+
+
+@pytest.fixture
+def sample_fov_earth_2024():
+    """Create a Field of View with Earth observer at 2024-01-01 (JD 2460310.5).
+
+    Observer state is Sun-centric (center_id=10) to match kete propagation frame.
+    Coordinates from JPL Horizons (Sun-centric J2000 Ecliptic).
+    """
+    jd = 2460310.5
+    # Earth (399) from Sun (10) Ecliptic J2000
+    pos = [-0.1658512460341716, 0.9692307824650869, -5.491524466498898e-05]
+    vel = [-0.01723488742014654, -0.002960664209404894, 6.839470754425655e-07]
+
+    observer = kete.State(
+        desig="Earth (Geocenter)",
+        jd=jd,
+        pos=kete.Vector(pos, frame=kete.Frames.Ecliptic),
+        vel=kete.Vector(vel, frame=kete.Frames.Ecliptic),
+        center_id=10,  # Sun
+    )
+    # All-sky FOV
+    pointing = kete.Vector.from_lat_lon(0, 0)
+    return kete.fov.ConeFOV(observer=observer, pointing=pointing, angle=180.0)
 
 
 # ==============================================================================

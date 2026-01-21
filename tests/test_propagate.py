@@ -334,3 +334,34 @@ class TestHorizonsKeteCrossValidation:
         assert diff < 0.5, (
             f"sky_motion_pa: Horizons={horizons_pa:.2f}°, kete={kete_pa:.2f}°, diff={diff:.2f}°"
         )
+
+
+class TestErosPropagation:
+    """Validate propagation accuracy for (433) Eros against JPL Horizons."""
+
+    def test_vs_horizons_2024(self, sample_orb_eros, sample_fov_earth_2024):
+        """Propagate Eros to 2024-01-01 and check position.
+
+        Reference: JPL Horizons Sun-centric geometric state.
+        """
+        # Convert orbit to state
+        states_in = kete.mpc.table_to_states(sample_orb_eros)
+        jd_target = sample_fov_earth_2024.observer.jd
+
+        # Propagate
+        states_out = kete.propagate_n_body(
+            states_in,
+            jd=jd_target,
+            include_asteroids=True,
+            suppress_errors=True
+        )
+
+        eros_state = states_out[0]
+        pos = np.array(eros_state.pos)
+
+        # Horizons Reference (Sun-centric J2000 Ecliptic)
+        ref = np.array([1.324107311220569, 0.5255011668486284, 0.2658603283643745])
+
+        dist = np.linalg.norm(pos - ref)
+        # Tolerance: < 1e-5 AU (~1500 km). Expected ~3e-9 AU (~450 m).
+        assert dist < 1e-5, f"Eros position diff: {dist:.3e} AU"
