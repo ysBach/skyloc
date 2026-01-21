@@ -55,7 +55,7 @@ def fetch_orb(
         The server to query. Currently, only "jplsbdb" is supported. Hopefully,
         in the future, it will be possible to query other servers like
         "iaumpc".
-        Default is "jplsbdb".
+        Default is ``"jplsbdb"``.
 
     kind2bools, neo2bool, pha2bool, twobody2bool : bool, optional
         Whether to convert certain string columns to boolean columns. See
@@ -67,7 +67,7 @@ def fetch_orb(
         download the minimum fields (see `configs.KETE_SBDB_MINIMUM_FIELDS`).
         If `fields` is superset of already downloaded file, it will likely
         raise an error. Recommended to delete the existing file.
-        Default is "simple" (see `~configs.SBDB_FIELDS`).
+        Default is ``"simple"`` (see `~configs.SBDB_FIELDS`).
 
     drop_impacted, drop_unreliable : bool, optional
         Whether to drop objects that are marked as impacted or unreliable
@@ -93,6 +93,7 @@ def fetch_orb(
         `KETE_SBDB2KETECOLS`. This may be erroneous if the user changes the
         `fields` parameter using `kind2bools`, because it removes `"kind"` and
         adds `"is_comet"` and `"has_number"`...
+        Default is `False`.
 
     Returns
     -------

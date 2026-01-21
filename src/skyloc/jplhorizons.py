@@ -40,13 +40,13 @@ def download_jpl_de(dename="de440s", output=None, overwrite=False):
 
     Parameters
     ----------
-    dename : str
-        Name of the ephemeris file to download. Default is "de440s".
+    dename : str, optional
+        Name of the ephemeris file to download. Default is ``"de440s"``.
         See https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/ for available files.
 
     output : str, pathlib.Path, optional
         Name of the output file path. If not provided, it will be saved into
-        this package's `kernels/` directory.
+        this package's `kernels/` directory. Default is `None`.
 
     overwrite : bool, optional
         If `True`, overwrite the existing file if it exists. Default is
@@ -229,8 +229,8 @@ def horizons_vector(
     aberrations : {'geometric', 'astrometric', 'apparent'}, optional
         Aberrations to be accounted for.
         Ignored if `obsid` and `location` are available as loaded SPK **and**
-        `try_spice` is `True` (result must be corresponding to `'geometric'`).
-        Default : 'geometric'.
+        `try_spice` is `True` (result must be corresponding to ``'geometric'``).
+        Default is ``'geometric'``.
 
     refplane : {'ecliptic', 'earth', 'body'}, optional
         Reference plane for all output quantities: ``'ecliptic'`` (ecliptic and
@@ -241,7 +241,7 @@ def horizons_vector(
         when `obsid` and `location` are available as loaded SPK **and**
         `try_spice` is `True`.
 
-        Default: ``'ecliptic'``.
+        Default is ``'ecliptic'``.
 
         See "Horizons Reference Frames" in the astroquery documentation for
         details.
@@ -250,24 +250,24 @@ def horizons_vector(
         If `True`, the output table will be in SPICE units (km for distance and
         km/s for velocity.). Otherwise, use default JPL Horizons units (au for
         distance and au/day for velocity, as of writing).
-        Default: `False`
+        Default is `False`.
 
     invert : bool, optional
         If `True`, the position and velocity vectors will be inverted.
         Useful in this case: The user only has the TDB time at the observatory
         in space far from the NAIF object (e.g., Earth). Then the easiest way
         to query the state vector of the observatory is to query the vector
-        **to** the geocenter and invert it.
+        **to** the geocenter and invert it. Default is `False`.
 
     return_arr : bool, optional
         If `True`, return the state vector components as two numpy arrays
-        (position and velocity), on top of the full table.
+        (position and velocity), on top of the full table. Default is `False`.
 
     try_spice : bool, optional
         If `True`, attempt to use SPICE kernels to avoid query by parsing
         `obsid` and `location`. This can provide faster results for major
         bodies with loaded SPK (see `skyloc.KETE_LOADED_SPKS` and
-        `is_spk_loaded`).
+        `is_spk_loaded`). Default is `False`.
 
     **kwargs : dict, optional
         Additional keyword arguments to pass to
@@ -393,14 +393,14 @@ def horizonsvec2ketestate(
 
     center_id : int, optional
         The SPICE kernel ID which defines the central reference point, defaults
-        to the Sun (10).
+        to the Sun (``10``).
 
     invert : bool, optional
         If `True`, the position and velocity vectors will be inverted.
         Useful in this case: The user only has the TDB time at the observatory
         in space far from the NAIF object (e.g., Earth). Then the easiest way
         to query the state vector of the observatory is to query the vector
-        **to** the geocenter and invert it.
+        **to** the geocenter and invert it. Default is `False`.
 
     Returns
     -------
@@ -448,7 +448,7 @@ def horizons_quick(
         Default is `HORIZONS_DEPOCHS`.
 
     location : str, optional
-        The location of the observer. Default is "500".
+        The location of the observer. Default is ``"500"``.
 
     in_tdb : bool, optional
         If `True`, the input epochs are in TDB. Default is `True`.

@@ -56,7 +56,7 @@ def sbdb_single2orb(
 
     n_samples : int, optional
         The number of samples to take of the covariance.
-        Default is 100.
+        Default is ``100``.
 
 
     Returns

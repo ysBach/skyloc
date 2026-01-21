@@ -17,7 +17,7 @@ def iau_hg_model(alpha, gpar=0.15):
 
     Parameters
     ----------
-    alpha__deg : float, array_like
+    alpha : float, array_like
         The phase angle (Sun-Target-Observer angle) in degrees.
 
     gpar : float, array_like, optional
@@ -120,7 +120,7 @@ def iau_hg_mag(hmag, alpha__deg, gpar=0.15, robs=1, rhel=1):
         By default ``0.15``.
 
     robs, rhel : float, array-like, optional
-        The observer and heliocentric distance in au. By default 1 au.
+        The observer and heliocentric distance in au. By default ``1.0`` au.
 
     Returns
     -------
@@ -180,8 +180,8 @@ def comet_mag(m1, m2, k1, k2, pc, alpha__deg, robs=1.0, rhel=1.0):
     alpha__deg : float, array_like
         The phase angle (Sun-Target-Observer angle) in degrees.
 
-    robs, rhel : float, array_like
-        The observer and heliocentric distance in au. By default 1 au.
+    robs, rhel : float, array_like, optional
+        The observer and heliocentric distance in au. By default ``1.0`` au.
 
     Notes
     -----
