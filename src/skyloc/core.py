@@ -8,14 +8,19 @@ import pandas as pd
 
 from .configs import MINIMUM_ORB_COLS
 from .keteutils.fov import FOVCollection
-from .keteutils.propagate import calc_geometries, make_nongravs_models
+from .keteutils.propagate import calc_geometries, make_nongravs_models, replace_loaded_with_spice
 from .keteutils._util import get_kete_loaded_objects
+from .keteutils import (
+    get_default_spice_targets,
+    map_spice_name_to_desig,
+    KETE_ASTEROIDS_PHYSICS,
+)
 from .ssoflux import comet_mag, iau_hg_mag
 from .utils import listmask, tdb2utc
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["locator_twice", "SSOLocator", "SpiceLocator", "calc_ephems"]
+__all__ = ["locator_twice", "SSOLocator", "SpiceLocator", "StarLocator", "calc_ephems"]
 
 _EPH_DTYPES = {
     "alpha": np.float32,
@@ -61,6 +66,43 @@ def locator_twice(
         load the existing propagated states from the given
         parquet file instead of propagating the orbits again for the first
         calculation. Default is `None`.
+
+    drop_major_asteroids : bool, optional
+        If `True`, drop major asteroids (those loaded in kete) from the
+        `orb`. Default is `True`.
+
+    jd0 : tuple of callable or float, optional
+        A 2-tuple of JDs (or callables) for the first and second propagation.
+        Default is ``(np.mean, np.mean)``.
+
+    include_asteroids : tuple of bool, optional
+        A 2-tuple indicating whether to include asteroids in the first and
+        second propagation. Default is ``(False, True)``.
+
+    dt_limit : tuple of float, optional
+        A 2-tuple of time limits (days) for 2-body approximation in the first
+        and second check. Default is ``(5.0, 0.5)``.
+
+    suppress_errors : bool, optional
+        If `True`, suppress errors during propagation. Default is `True`.
+
+    add_obsid : bool, optional
+        If `True`, add "obsid" column to the result. Default is `True`.
+
+    drop_obsindex : bool, optional
+        If `True`, drop "obsindex" column from the result. Default is `True`.
+
+    add_jds : bool, optional
+        If `True`, add "jd_tdb" and "jd_utc" columns to the result.
+        Default is `True`.
+
+    non_gravs : list of bool, optional
+        A 2-element list indicating whether to use non-gravitational terms
+        for the first and second propagation. Default is ``[True, True]``.
+
+    calc_ephems_crude : bool, optional
+        If `True`, calculate ephemerides after the first crude step.
+        Default is `False`.
 
     Notes
     -----
@@ -161,41 +203,395 @@ class Locator:
 class SpiceLocator(Locator):
     """A class to locate objects in a given Field of View (FOV) using SPICE.
 
-    Good examples are planets and satellites, but it can be used for any
-    object that has a SPICE kernel loaded.
-    """
+    This locator uses SPICE kernels to compute ephemerides for planets,
+    satellites, and large asteroids. It bypasses n-body propagation which
+    can produce NaN for objects that are treated as perturbers (like the
+    5 large asteroids in kete).
 
-    def __init__(self, fovs, desigs):
-        super().__init__(fovs)
-        self.desigs = desigs
-        self.loaded = kete.spice.loaded_objects()
+    Parameters
+    ----------
+    fovs : FOVCollection, iterable of `kete.FOV`, or `kete.FOVList`
+        Field of View(s) to check against.
 
-    def load_spice(self, fpaths):
-        kete.spice.load_spice(fpaths)
-        self.loaded = kete.spice.loaded_objects()
+    targets : list of str, optional
+        List of target names to locate. These must be SPICE-resolvable names
+        (planets, satellites, or large asteroids loaded in kete).
+        If `None`, uses default targets from `get_default_spice_targets()`.
+        Default is `None`.
 
+    include_planets : bool, optional
+        If `True` and targets is `None`, include default planets.
+        Default is `True`.
 
-class StarLocator(Locator):
-    """A class to locate sidereal objects in a given Field of View (FOV).
-
-    This class provides methods to check if stars are in the FOV and to
-    calculate their positions.
-
-    Plan: include proper motions
+    include_asteroids : bool, optional
+        If `True` and targets is `None`, include kete's 5 large asteroids.
+        Default is `True`.
 
     Attributes
     ----------
-    fovs : FOVCollection
-        A collection of FOVs to check against.
+    targets : list of str
+        The target names being located.
+
+    fov_check_simstates : list of `kete.SimultaneousStates`
+        Results from fov_spice_check after calling `fov_spice_check()`.
+
+    fov_check_fov2objs : dict
+        Mapping of FOV designations to lists of visible object names.
+
+    fov_check_objids : list of str
+        Unique object names visible in at least one FOV.
     """
 
-    def __init__(self, fovs):
+    def __init__(
+        self,
+        fovs,
+        targets=None,
+        include_planets=True,
+        include_asteroids=True,
+    ):
         super().__init__(fovs)
 
+        if targets is None:
+            self.targets = get_default_spice_targets(
+                include_planets=include_planets,
+                include_asteroids=include_asteroids,
+            )
+        else:
+            self.targets = list(targets)
+
+        self.loaded = kete.spice.loaded_objects()
+
+        # Results storage (populated by fov_spice_check)
+        self.fov_check_simstates = None
+        self.fov_check_fov2objs = None
+        self.fov_check_objids = None
+
+    def load_spice(self, fpaths):
+        """Load additional SPICE kernels.
+
+        Parameters
+        ----------
+        fpaths : str or list of str
+            Path(s) to SPICE kernel files to load.
+        """
+        kete.spice.load_spice(fpaths)
+        self.loaded = kete.spice.loaded_objects()
+
+    def fov_spice_check(self):
+        """Check which SPICE targets are visible in the FOVs.
+
+        Uses `kete.fov.fov_spice_check()` to determine visibility of
+        planets, satellites, and large asteroids.
+
+        Results are stored in:
+        - `self.fov_check_simstates`: List of SimultaneousStates
+        - `self.fov_check_fov2objs`: Dict mapping FOV desig -> list of visible objects
+        - `self.fov_check_objids`: List of unique visible object names
+        """
+        simstas = []
+        for target in self.targets:
+            try:
+                # make target a list if not iterable
+                if not isinstance(target, (list, tuple)):
+                    target = [target]
+                result = kete.fov.fov_spice_check(target, self.fovc.fovlist)
+                simstas.extend(result)
+            except Exception as e:
+                logger.warning("fov_spice_check failed for %s: %s", target, e)
+                continue
+
+        # Collect designations of FOVs and objects
+        fov2objs = {}
+        for _ss in simstas:
+            _objids = [_s.desig for _s in _ss.states]
+            fov2objs.setdefault(_ss.fov.observer.desig, []).extend(_objids)
+
+        # Get unique object IDs
+        uniq_objids = set()
+        for objids in fov2objs.values():
+            uniq_objids.update(objids)
+        uniq_objids = list(uniq_objids)
+
+        self.fov_check_simstates = simstas
+        self.fov_check_fov2objs = fov2objs
+        self.fov_check_objids = uniq_objids
+
+        # FOVs with objects
+        self.fov_mask_hasobj = self.fovc.mask_by_desig(fov2objs.keys())
+        self.fovc_hasobj = FOVCollection(self.fovc[self.fov_mask_hasobj])
+
+        logger.info(
+            "SPICE FOV check: %d objects in %d FOVs", len(uniq_objids), len(fov2objs)
+        )
+
+    def calc_ephems(
+        self,
+        sort_by=["vmag"],
+        dtypes=_EPH_DTYPES,
+        add_obsid=True,
+        drop_obsindex=True,
+        add_jds=True,
+        output=None,
+        overwrite=False,
+    ):
+        """Calculate ephemerides for SPICE objects in the FOVs.
+
+        Parameters
+        ----------
+        sort_by : list, optional
+            Columns to sort by. Default is ``["vmag"]``.
+
+        dtypes : dict, optional
+            Data types for output columns. Default is `_EPH_DTYPES`.
+
+        add_obsid : bool, optional
+            If `True`, add "obsid" column. Default is `True`.
+
+        drop_obsindex : bool, optional
+            If `True`, drop "obsindex" column. Default is `True`.
+
+        add_jds : bool, optional
+            If `True`, add "jd_tdb" and "jd_utc" columns. Default is `True`.
+
+        output : str or Path, optional
+            Output parquet file path. Default is `None`.
+
+        overwrite : bool, optional
+            If `True`, overwrite existing output file. Default is `False`.
+        """
+        if not self.fov_check_simstates:
+            logger.warning("No valid SPICE FOV states for ephemeris calculation.")
+            self.eph = None
+            self.eph_obsindex = None
+            return
+
+        # Build ephemerides from SimultaneousStates
+        dfs = []
+        obsids = []
+
+        for idx, _simulstates in enumerate(self.fov_check_simstates):
+            geoms = calc_geometries(
+                _simulstates, rates_in_arcsec_per_min=True
+            )
+
+            # For SPICE objects, we don't have H/G magnitudes, use placeholder
+            geoms["vmag"] = np.full(len(geoms["desig"]), 99.0, dtype=np.float32)
+
+            # Add magnitude estimates for large asteroids if available
+            for i, desig in enumerate(geoms["desig"]):
+                for num, info in KETE_ASTEROIDS_PHYSICS.items():
+                    if desig.lower() == info["name"]:
+                        h_mag = info["H"]
+                        g_par = info["G"]
+                        vmag = iau_hg_mag(
+                            h_mag,
+                            geoms["alpha"][i],
+                            gpar=g_par,
+                            robs=geoms["r_obs"][i],
+                            rhel=geoms["r_hel"][i],
+                        )
+                        geoms["vmag"][i] = vmag
+                        break
+
+            eph = pd.DataFrame.from_dict(geoms)
+            eph["obsindex"] = idx
+            if add_jds:
+                eph["jd_tdb"] = _simulstates.jd
+            obsids.append(_simulstates.fov.observer.desig)
+            dfs.append(eph)
+
+        if not dfs:
+            self.eph = None
+            self.eph_obsindex = None
+            return
+
+        dfs = pd.concat(dfs, ignore_index=True)
+
+        if add_jds:
+            dfs["jd_utc"] = tdb2utc(dfs["jd_tdb"].values, format="jd").jd
+
+        if sort_by is not None:
+            dfs = dfs.sort_values(["obsindex"] + sort_by).reset_index(drop=True)
+
+        if dtypes is not None:
+            for c, d in dtypes.items():
+                if c in dfs.columns:
+                    dfs[c] = dfs[c].astype(d)
+
+        if add_obsid:
+            obsindex_arr = np.array(obsids)
+            dfs["obsid"] = obsindex_arr[dfs["obsindex"].values]
+
+        if drop_obsindex:
+            dfs.drop(columns=["obsindex"], inplace=True)
+
+        if output is not None:
+            output = Path(output)
+            if overwrite or not output.exists():
+                dfs.to_parquet(output)
+                logger.debug("Saved SPICE ephemeris to %s", output)
+
+        self.eph = dfs
+        self.eph_obsindex = obsids
+
+
+class StarLocator(Locator):
+    """A class to locate sidereal objects (fixed RA/Dec) in a given Field of View.
+
+    This class uses kete's fov_static_check to determine visibility of objects
+    with fixed celestial coordinates (stars, galaxies, QSOs, etc.).
+
+    Parameters
+    ----------
+    fovs : FOVCollection, iterable of `kete.FOV`, or `kete.FOVList`
+        Field of View(s) to check against.
+
+    sources : pandas.DataFrame, optional
+        DataFrame with columns "ra", "dec" (in degrees, J2000) and optionally
+        "desig" for source designations. Other columns (e.g., "vmag") are preserved.
+        If `None`, sources must be set later via `set_sources()`.
+        Default is `None`.
+
+    Attributes
+    ----------
+    sources : pandas.DataFrame
+        The source catalog being checked.
+
+    fov_check_results : list
+        Results from fov_static_check after calling `fov_static_check()`.
+
+    fov_check_fov2objs : dict
+        Mapping of FOV designations to lists of visible source indices.
+
+    Notes
+    -----
+    Future enhancement: Add proper motion support for epoch propagation.
+    """
+
+    def __init__(self, fovs, sources=None):
+        super().__init__(fovs)
+        self._sources = None
+        if sources is not None:
+            self.set_sources(sources)
+
+        # Results storage
+        self.fov_check_results = None
+        self.fov_check_fov2objs = None
+        self.sources_infov_mask = None
+
+    def set_sources(self, sources):
+        """Set the source catalog.
+
+        Parameters
+        ----------
+        sources : pandas.DataFrame
+            DataFrame with columns "ra", "dec" (degrees, J2000).
+            Optional: "desig" for source designations.
+
+        Raises
+        ------
+        ValueError
+            If required columns are missing.
+        """
+        if not isinstance(sources, pd.DataFrame):
+            raise TypeError("sources must be a pandas DataFrame")
+
+        required = ["ra", "dec"]
+        missing = [c for c in required if c not in sources.columns]
+        if missing:
+            raise ValueError(f"Missing required columns: {missing}")
+
+        if "desig" not in sources.columns:
+            # Generate default designations
+            sources = sources.copy()
+            sources["desig"] = [f"star_{i}" for i in range(len(sources))]
+
+        self._sources = sources
+
+    @property
+    def sources(self):
+        """Get the source catalog."""
+        return self._sources
+
     def fov_static_check(self):
-        """Check which stars are in the FOVs."""
-        # Implement star-specific logic here
-        pass
+        """Check which static sources are visible in the FOVs.
+
+        Uses `kete.fov.fov_static_check()` to determine visibility of
+        fixed RA/Dec sources. Sources are converted to kete Vector objects
+        and checked against each FOV.
+
+        Results are stored in:
+        - `self.fov_check_results`: Raw results from kete
+        - `self.fov_check_fov2objs`: Dict mapping FOV desig -> list of source desigs
+        - `self.sources_infov_mask`: Boolean mask of sources visible in any FOV
+        """
+        if self._sources is None:
+            raise ValueError("No sources set. Use set_sources() first.")
+
+        # Convert RA/Dec to kete Vectors
+        ra_arr = self._sources["ra"].values
+        dec_arr = self._sources["dec"].values
+        desigs = self._sources["desig"].values
+
+        # Create direction vectors for each source
+        source_vectors = []
+        for ra, dec in zip(ra_arr, dec_arr):
+            vec = kete.Vector.from_ra_dec(ra=ra, dec=dec)
+            source_vectors.append(vec)
+
+        # Run static check for each FOV
+        fov2objs = {}
+        all_visible_indices = set()
+
+        for fov in self.fovc.fovlist:
+            visible_indices = []
+            for i, vec in enumerate(source_vectors):
+                # Check if vector is within FOV
+                # fov_static_check takes a list of vectors and returns those in FOV
+                try:
+                    result = kete.fov.fov_static_check([vec], [fov])
+                    if result:
+                        visible_indices.append(i)
+                        all_visible_indices.add(i)
+                except Exception as e:
+                    logger.debug("fov_static_check failed for source %d: %s", i, e)
+                    continue
+
+            if visible_indices:
+                visible_desigs = [desigs[i] for i in visible_indices]
+                fov2objs[fov.observer.desig] = visible_desigs
+
+        # Create mask for sources in any FOV
+        self.sources_infov_mask = np.zeros(len(self._sources), dtype=bool)
+        self.sources_infov_mask[list(all_visible_indices)] = True
+
+        self.fov_check_fov2objs = fov2objs
+        self.fov_check_results = fov2objs  # For compatibility
+
+        # FOVs with objects
+        self.fov_mask_hasobj = self.fovc.mask_by_desig(fov2objs.keys())
+        if np.any(self.fov_mask_hasobj):
+            self.fovc_hasobj = FOVCollection(self.fovc[self.fov_mask_hasobj])
+        else:
+            self.fovc_hasobj = None
+
+        logger.info(
+            "Static FOV check: %d sources in %d FOVs",
+            len(all_visible_indices),
+            len(fov2objs),
+        )
+
+    def get_visible_sources(self):
+        """Get DataFrame of sources visible in at least one FOV.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Subset of sources that are visible in any FOV.
+        """
+        if self.sources_infov_mask is None:
+            raise ValueError("Run fov_static_check() first.")
+        return self._sources[self.sources_infov_mask].copy()
 
 
 class SSOLocator(Locator):
@@ -231,6 +627,7 @@ class SSOLocator(Locator):
 
         simstates : `~kete.SimultaneousStates`, path-like, optional
             If provided, use it as the initial states for propagation.
+            Default is `None`.
 
         non_gravs : list, bool, optional
             A list of non-gravitational terms for each object. If provided, then
@@ -240,6 +637,9 @@ class SSOLocator(Locator):
             models by `kete.NonGravModel.new_comet()`.
             If `False`, no non-gravitational terms will be used for any object.
             Default is `True`.
+
+        copy_orb : bool, optional
+            If `True`, copy the `orb` DataFrame. Default is `False`.
 
         drop_major_asteroids : bool, optional
             If `True`, drop major asteroids (those loaded in kete) from the
@@ -339,7 +739,7 @@ class SSOLocator(Locator):
             A boolean mask to select which objects to propagate. It will select
             such as `self.states_from_orb[objmask]` to run the propagation on subset of
             the objects. Thus, it must have the length same as `self.states_from_orb`,
-            i.e., same as `self.orb`.
+            i.e., same as `self.orb`. Default is `None`.
 
         output : str or `~pathlib.Path`, optional
             If provided, save the propagated states to a parquet file.
@@ -348,6 +748,7 @@ class SSOLocator(Locator):
         overwrite : bool, optional
             If `True`, re-do the calculation and overwrite the existing output file
             if it exists. If `False`, the `output` will be loaded if it exists.
+            Default is `False`.
 
         Notes
         -----
@@ -365,42 +766,65 @@ class SSOLocator(Locator):
             # Use the mean JD of the FOVs
             jd0 = jd0(self.fovc.fov_jds)
 
-        if output_exists and not overwrite:
+        # Determine whether to compute fresh or load from cache
+        load_from_cache = output_exists and not overwrite
+
+        if load_from_cache:
             states0 = kete.SimultaneousStates.load_parquet(output).states
-            self.jd0 = jd0
-            self.states_propagated_jd0 = states0
-            return
+            logger.debug("Loaded cached states from %s", output)
+        else:
+            states0 = kete.propagate_n_body(
+                listmask(self.states_from_orb, objmask),
+                jd=jd0,
+                include_asteroids=include_asteroids,
+                non_gravs=listmask(self.non_gravs, objmask),
+                suppress_errors=suppress_errors,
+            )
+            logger.info("Propagated %d states to JD %.2f", len(states0), jd0)
 
-        states0 = kete.propagate_n_body(
-            listmask(self.states_from_orb, objmask),
-            jd=jd0,
-            include_asteroids=include_asteroids,
-            non_gravs=listmask(self.non_gravs, objmask),
-            suppress_errors=suppress_errors,
-        )
+        # Replace loaded asteroids with SPICE states to avoid self-impact issues
+        # This runs ALWAYS (whether loaded from cache or freshly computed)
+        if include_asteroids:
+            states0 = replace_loaded_with_spice(states0, jd0)
 
-        logger.info("Propagated %d states to JD %.2f", len(states0), jd0)
-
-        if output is not None or overwrite:
+        # Save to output file if requested (and not loaded from cache)
+        if output is not None and not load_from_cache:
             kete.SimultaneousStates(states0).save_parquet(output)
-            # Load the states from the file to ensure consistency
+            # Reload to ensure consistency
             states0 = kete.SimultaneousStates.load_parquet(output).states
             logger.debug("Saved propagated states to %s", output)
 
         self.jd0 = jd0
         self.states_propagated_jd0 = states0
 
-    def fov_state_check(self, dt_limit=3.0, include_asteroids=False):
+    def fov_state_check(
+        self,
+        dt_limit=3.0,
+        include_asteroids=False,
+        use_spice_for_loaded=True,
+        spice_targets=None,
+    ):
         """Check which objects are in the FOVs after propagation.
 
         Parameters
         ----------
         dt_limit : float, optional
             Length of time in days where 2-body mechanics is a good approximation.
-            Default is 3.0 days.
+            Default is ``3.0`` days.
 
         include_asteroids : bool, optional
             If `True`, include asteroids in the check. Default is `False`.
+
+        use_spice_for_loaded : bool, optional
+            If `True`, use SPICE kernels (via `fov_spice_check`) for planets
+            and the 5 large asteroids that kete uses as perturbers. This avoids
+            NaN results from n-body propagation for these objects.
+            Default is `True`.
+
+        spice_targets : list of str, optional
+            Additional SPICE targets to check beyond the default planets and
+            large asteroids. These will be checked via `fov_spice_check`.
+            Default is `None`.
 
         Notes
         -----
@@ -414,6 +838,9 @@ class SSOLocator(Locator):
 
         self.fov_check_objids : list of str
             A list of unique object designations that are in the FOVs.
+
+        self.fov_check_spice_simstates : list of `kete.SimultaneousStates`
+            SPICE-derived states (only populated if `use_spice_for_loaded=True`).
         """
         simstas = kete.fov.fov_state_check(
             self.states_propagated_jd0,
@@ -422,14 +849,46 @@ class SSOLocator(Locator):
             include_asteroids=include_asteroids,
         )
 
+        # Handle SPICE-based objects (planets only)
+        # Note: Loaded asteroids are already SPICE-replaced in propagate_n_body,
+        # so we don't need fov_spice_check for them (which causes fuzzy matching issues).
+        spice_simstas = []
+        if use_spice_for_loaded:
+            # Only check planets - asteroids already handled via n-body replacement
+            planet_targets = get_default_spice_targets(
+                include_planets=True, include_asteroids=False
+            )
+            targets_to_check = list(planet_targets)
+
+            # Add any additional user-specified targets
+            if spice_targets is not None:
+                targets_to_check.extend(spice_targets)
+
+            # Run fov_spice_check for each target (planets use SPICE IDs, which work)
+            for target in targets_to_check:
+                try:
+                    result = kete.fov.fov_spice_check(target, self.fovc.fovlist)
+                    spice_simstas.extend(result)
+                except Exception as e:
+                    logger.debug("fov_spice_check failed for %s: %s", target, e)
+                    continue
+
+            if spice_simstas:
+                logger.info(
+                    "SPICE check found %d SimultaneousStates for planets",
+                    len(spice_simstas),
+                )
+
+        # Merge n-body and SPICE results
+        all_simstas = list(simstas) + spice_simstas
+
         # Convenience: Collect the designations of the FOVs and objects
         fov2objs = {}
         # key = FOV's designations (str)
         # value = list of object designations in that FOV (list[str])
-        for _ss in simstas:
-            _objids = []
-            for _s in _ss.states:
-                _objids.append(_s.desig)
+        for _ss in all_simstas:
+            # Use list comprehension instead of inner loop with append
+            _objids = [map_spice_name_to_desig(_s.desig) for _s in _ss.states]
             fov2objs.setdefault(_ss.fov.observer.desig, []).extend(_objids)
 
         # For ~1000 elements, below is ~ 10x faster than
@@ -439,7 +898,8 @@ class SSOLocator(Locator):
             uniq_objids.update(objids)
         uniq_objids = list(uniq_objids)
 
-        self.fov_check_simstates = simstas
+        self.fov_check_simstates = all_simstas
+        self.fov_check_spice_simstates = spice_simstas  # Store separately for reference
         self.fov_check_fov2objs = fov2objs
         self.fov_check_objids = uniq_objids
 
@@ -490,7 +950,9 @@ class SSOLocator(Locator):
             )
             if add_obsid:
                 # Add the observer designations to the ephemerides
-                eph["obsid"] = eph["obsindex"].apply(lambda x: obsindex[x])
+                # Use NumPy array indexing instead of slow .apply()
+                obsindex_arr = np.array(obsindex)
+                eph["obsid"] = obsindex_arr[eph["obsindex"].values]
             if drop_obsindex:
                 eph.drop(columns=["obsindex"], inplace=True)
 
@@ -509,7 +971,9 @@ class SSOLocator(Locator):
         Useful as `self.eph["obsid"] = self.eph_obsids`
         """
         try:
-            return self.eph["obsindex"].apply(lambda x: self.eph_obsindex[x])
+            # Use NumPy array indexing instead of slow .apply()
+            obsindex_arr = np.array(self.eph_obsindex)
+            return obsindex_arr[self.eph["obsindex"].values]
         except KeyError:
             # if obsindex is dropped in calc_ephems()
             return np.array(self.eph["obsid"])
@@ -532,14 +996,14 @@ def _calc_ephem(
 
     gpar_default : float, optional
         Default slope parameter (G in the IAU H, G model) for the objects.
-        Default is 0.15.
+        Default is ``0.15``.
 
     rates_in_arcsec_per_min : bool, optional
         If `True`, the rates will be in arcsec/min instead of degrees/day.
         Default is `True`.
 
     sort_by : list, optional
-        List of columns to sort the output DataFrame by. Default is ["vmag"].
+        List of columns to sort the output DataFrame by. Default is ``["vmag"]``.
 
     """
     # NOTE: This is generally a very fast function compared to other SSO
@@ -547,40 +1011,69 @@ def _calc_ephem(
     geoms = calc_geometries(
         simulstates, rates_in_arcsec_per_min=rates_in_arcsec_per_min
     )
+    # Ensure designations match orb (e.g., "vesta" -> "4")
+    geoms["desig"] = [map_spice_name_to_desig(d) for d in geoms["desig"]]
 
-    # orb = orb.loc[orb["desig"].isin(geoms["desig"])]
-    inmask = orb["desig"].isin(geoms["desig"])
+    # Align orb to geoms to ensure 1-to-1 correspondence for magnitude calculation
+    # Only keep orbital elements for objects present in geoms, in the order of geoms.
+    # Note: orb["desig"] must be unique for correct reindexing.
+    if orb["desig"].duplicated().any():
+        logger.warning("Duplicate designations found in orbit file. Magnitude calculation may be incorrect.")
+        orb = orb.drop_duplicates(subset="desig")
 
-    if not any(inmask):
-        raise ValueError(
-            "No matching objects between `orb` and `simulstates`: "
-            + f"{orb['desig'].tolist()} vs {geoms['desig'].tolist()}"
+    # Check for matches
+    available_desigs = set(orb["desig"])
+    has_orb_mask = np.array([d in available_desigs for d in geoms["desig"]])
+
+    unmatched = [d for d in geoms["desig"] if d not in available_desigs]
+    if unmatched:
+        logger.debug(
+            "Objects without orbit data (SPICE-only, will have NaN vmag): %s...",
+            unmatched[:5],
         )
 
-    orb["G"] = orb["G"].fillna(gpar_default)
-    _orb = orb[["H", "G", "M1", "M2", "K1", "K2", "PC"]].to_numpy()[inmask, :]
+    # Initialize vmag array with NaN for all objects
+    n_objects = len(geoms["desig"])
+    vmag = np.full(n_objects, np.nan)
 
-    vmags = iau_hg_mag(
-        _orb[:, 0],
-        geoms["alpha"],
-        gpar=_orb[:, 1],
-        robs=geoms["r_obs"],
-        rhel=geoms["r_hel"],
-    )
-    tmags, nmags = comet_mag(
-        m1=_orb[:, 2],
-        m2=_orb[:, 3],
-        k1=_orb[:, 4],
-        k2=_orb[:, 5],
-        pc=_orb[:, 6],
-        alpha__deg=geoms["alpha"],
-        robs=geoms["r_obs"],
-        rhel=geoms["r_hel"],
-    )
-    # either vmag or tmag/nmag, whichever is the brightest:
-    vmag = np.nanmin([vmags, tmags, nmags], axis=0)
-    vmag[np.isnan(vmag)] = 99.0  # fill with a large value
-    geoms["vmag"] = vmag  # fill with a large value
+    # Only calculate magnitudes for objects with orbit data
+    if any(has_orb_mask):
+        # Get indices and designations of objects with orbit data
+        orb_desigs = [d for i, d in enumerate(geoms["desig"]) if has_orb_mask[i]]
+        orb_indices = np.where(has_orb_mask)[0]
+
+        # Reindex orb to match the subset with orbit data
+        orb_indexed = orb.set_index("desig")
+        orb_aligned = orb_indexed.reindex(orb_desigs)
+
+        # Extract parameters for magnitude calculation
+        g_vals = orb_aligned["G"].fillna(gpar_default).to_numpy()
+        h_vals = orb_aligned["H"].to_numpy()
+        m1 = orb_aligned.get("M1", pd.Series(np.nan, index=orb_aligned.index)).to_numpy()
+        m2 = orb_aligned.get("M2", pd.Series(np.nan, index=orb_aligned.index)).to_numpy()
+        k1 = orb_aligned.get("K1", pd.Series(np.nan, index=orb_aligned.index)).to_numpy()
+        k2 = orb_aligned.get("K2", pd.Series(np.nan, index=orb_aligned.index)).to_numpy()
+        pc = orb_aligned.get("PC", pd.Series(np.nan, index=orb_aligned.index)).to_numpy()
+
+        # Extract geometry for these objects
+        alpha_sub = np.array(geoms["alpha"])[orb_indices]
+        r_obs_sub = np.array(geoms["r_obs"])[orb_indices]
+        r_hel_sub = np.array(geoms["r_hel"])[orb_indices]
+
+        vmags = iau_hg_mag(h_vals, alpha_sub, gpar=g_vals, robs=r_obs_sub, rhel=r_hel_sub)
+        tmags, nmags = comet_mag(
+            m1=m1, m2=m2, k1=k1, k2=k2, pc=pc,
+            alpha__deg=alpha_sub, robs=r_obs_sub, rhel=r_hel_sub,
+        )
+        # Either vmag or tmag/nmag, whichever is the brightest
+        mag_sub = np.nanmin([vmags, tmags, nmags], axis=0)
+
+        # Place calculated magnitudes into the full array
+        vmag[orb_indices] = mag_sub
+
+    # Fill remaining NaN vmag with a large value (99.0 = invisible)
+    vmag[np.isnan(vmag)] = 99.0
+    geoms["vmag"] = vmag
 
     geoms = pd.DataFrame.from_dict(geoms)
 
@@ -616,7 +1109,7 @@ def calc_ephems(
 
     gpar_default : float, optional
         Default slope parameter (G in the IAU H, G model) for the objects.
-        Default is 0.15.
+        Default is ``0.15``.
 
     rates_in_arcsec_per_min : bool, optional
         If `True`, the rates will be in arcsec/min instead of degrees/day.
@@ -630,14 +1123,14 @@ def calc_ephems(
         the disk/ram usage, the user can drop the unnecessary column.
 
     sort_by : list, optional
-        List of columns to sort the output DataFrame by. Default is ["vmag"].
+        List of columns to sort the output DataFrame by. Default is ``["vmag"]``.
 
     dtypes : dict, optional
         Data types for the output DataFrame. Default is `_EPH_DTYPES`.
 
     output : str or `~pathlib.Path`, optional
         Path to the output file where the ephemerides will be saved in
-        Parquet format. Default is "eph.parq". If `None`, no output file is
+        Parquet format. Default is ``"eph.parq"``. If `None`, no output file is
         saved.
 
     overwrite : bool, optional
@@ -726,8 +1219,8 @@ def calc_ephems(
     dfs = pd.concat(dfs, ignore_index=True)
 
     if add_jds:
-        # dfs["jd_utc"] = tdb2utc(dfs["jd_tdb"].values, format="jd").jd
-        dfs["jd_utc"] = dfs["jd_tdb"].apply(lambda x: tdb2utc(x).jd)
+        # Vectorized TDB to UTC conversion (astropy.time.Time handles arrays)
+        dfs["jd_utc"] = tdb2utc(dfs["jd_tdb"].values, format="jd").jd
 
     if sort_by is not None:
         dfs = dfs.sort_values(["obsindex"] + sort_by).reset_index(drop=True)
