@@ -396,7 +396,6 @@ class FastTanSipWCS:
     __slots__ = ("_wcs", "parallel_threshold")
 
     def __init__(self, hdr_dict, parallel_threshold=2000):
-        logger.debug("Initializing FastTanSipWCS with parallel_threshold=%d", parallel_threshold)
         self._wcs = create_wcs_from_dict(hdr_dict)
         self.parallel_threshold = parallel_threshold
 
