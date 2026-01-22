@@ -38,7 +38,6 @@ def test_infov2d():
     assert infov[1] == False
 
 
-
 @pytest.fixture
 def user_header():
     raw_header_str = """
@@ -103,7 +102,8 @@ BP_2_0  =   -6.65714682174E-06 / SIP distortion coefficient
 BP_2_1  =    -5.2894464541E-10 / SIP distortion coefficient
 BP_3_0  =     9.1794303868E-13 / SIP distortion coefficient
 """
-    return fits.Header.fromstring(raw_header_str, sep='\n')
+    return fits.Header.fromstring(raw_header_str, sep="\n")
+
 
 def test_pix2world_compliance(user_header):
     """Compare FastTanSipWCS pix2world with Astropy."""
@@ -123,7 +123,10 @@ def test_pix2world_compliance(user_header):
     ra_f, dec_f = w_fast.all_pix2world(x, y, 0)
 
     np.testing.assert_allclose(ra_f, ra_a, rtol=1e-3, atol=1e-8, err_msg="RA mismatch")
-    np.testing.assert_allclose(dec_f, dec_a, rtol=1e-3, atol=1e-8, err_msg="Dec mismatch")
+    np.testing.assert_allclose(
+        dec_f, dec_a, rtol=1e-3, atol=1e-8, err_msg="Dec mismatch"
+    )
+
 
 def test_world2pix_compliance(user_header):
     """Compare FastTanSipWCS world2pix with Astropy."""
@@ -131,7 +134,7 @@ def test_world2pix_compliance(user_header):
     w_astro = WCS(user_header)
     w_fast = FastTanSipWCS(h_dict)
 
-    x_in = np.linspace(100, 1900, 20) # Avoid edges to be safe
+    x_in = np.linspace(100, 1900, 20)  # Avoid edges to be safe
     y_in = np.linspace(100, 1900, 20)
     xx, yy = np.meshgrid(x_in, y_in)
     x_in = xx.ravel()
@@ -143,8 +146,9 @@ def test_world2pix_compliance(user_header):
     x_f, y_f = w_fast.all_world2pix(ra, dec, 0)
 
     # For x~1000, 1e-3 is 1 pixel.
-    np.testing.assert_allclose(x_f, x_a, rtol=1e-6, atol=1.e-3, err_msg="X mismatch")
-    np.testing.assert_allclose(y_f, y_a, rtol=1e-6, atol=1.e-3, err_msg="Y mismatch")
+    np.testing.assert_allclose(x_f, x_a, rtol=1e-6, atol=1.0e-3, err_msg="X mismatch")
+    np.testing.assert_allclose(y_f, y_a, rtol=1e-6, atol=1.0e-3, err_msg="Y mismatch")
+
 
 def test_scalar_compliance(user_header):
     """Verify scalar input/output formats match Astropy."""
@@ -159,7 +163,9 @@ def test_scalar_compliance(user_header):
     ra_f, dec_f = w_fast.all_pix2world(x, y, 0)
 
     # Check that output is scalar(-ish)
-    assert np.shape(ra_f) == np.shape(ra_a), f"pix2world RA shape mismatch: {np.shape(ra_f)} vs {np.shape(ra_a)}"
+    assert np.shape(ra_f) == np.shape(
+        ra_a
+    ), f"pix2world RA shape mismatch: {np.shape(ra_f)} vs {np.shape(ra_a)}"
     assert np.shape(dec_f) == np.shape(dec_a), f"pix2world Dec shape mismatch"
     # assert type(ra_f) == type(ra_a) # Might be too strict if one is float vs np.float64
 
@@ -173,9 +179,98 @@ def test_scalar_compliance(user_header):
     x_a, y_a = w_astro.all_world2pix(ra, dec, 0)
     x_f, y_f = w_fast.all_world2pix(ra, dec, 0)
 
-    assert np.shape(x_f) == np.shape(x_a), f"world2pix X shape mismatch: {np.shape(x_f)} vs {np.shape(x_a)}"
+    assert np.shape(x_f) == np.shape(
+        x_a
+    ), f"world2pix X shape mismatch: {np.shape(x_f)} vs {np.shape(x_a)}"
     assert np.shape(y_f) == np.shape(y_a), f"world2pix Y shape mismatch"
 
     np.testing.assert_allclose(x_f, x_a, atol=1e-3)
     np.testing.assert_allclose(y_f, y_a, atol=1e-3)
 
+
+def test_to_astropy(user_header):
+    """Verify FastTanSipWCS.to_astropy() method."""
+    # 1. Setup
+    ref_wcs = WCS(user_header)
+    h_dict = dict(user_header)
+    fast_wcs = FastTanSipWCS(h_dict)
+
+    # 2. Convert back to Astropy
+    new_wcs = fast_wcs.to_astropy()
+
+    # 3. Basic Header/Attribute Checks
+    np.testing.assert_allclose(
+        new_wcs.wcs.crval, ref_wcs.wcs.crval, err_msg="CRVAL mismatch"
+    )
+    np.testing.assert_allclose(
+        new_wcs.wcs.crpix, ref_wcs.wcs.crpix, err_msg="CRPIX mismatch"
+    )
+
+    # Linear transformation (pixel scale/rotation)
+    np.testing.assert_allclose(
+        new_wcs.pixel_scale_matrix,
+        ref_wcs.pixel_scale_matrix,
+        rtol=1e-10,
+        err_msg="Linear transform mismatch",
+    )
+
+    # SIP Coefficients
+    assert new_wcs.sip.a_order == ref_wcs.sip.a_order
+    assert new_wcs.sip.b_order == ref_wcs.sip.b_order
+    np.testing.assert_allclose(new_wcs.sip.a, ref_wcs.sip.a, err_msg="SIP A mismatch")
+    np.testing.assert_allclose(new_wcs.sip.b, ref_wcs.sip.b, err_msg="SIP B mismatch")
+
+    if ref_wcs.sip.ap_order:
+        assert new_wcs.sip.ap_order == ref_wcs.sip.ap_order
+        np.testing.assert_allclose(
+            new_wcs.sip.ap, ref_wcs.sip.ap, err_msg="SIP AP mismatch"
+        )
+    if ref_wcs.sip.bp_order:
+        assert new_wcs.sip.bp_order == ref_wcs.sip.bp_order
+        np.testing.assert_allclose(
+            new_wcs.sip.bp, ref_wcs.sip.bp, err_msg="SIP BP mismatch"
+        )
+
+    # 4. Functional Verification (Round-trip pixels)
+    # Use deterministic grid like in test_pix2world_compliance
+    x = np.linspace(0, 2048, 20)
+    y = np.linspace(0, 2048, 20)
+    xx, yy = np.meshgrid(x, y)
+    x_flat, y_flat = xx.ravel(), yy.ravel()
+
+    # Reference transform
+    ra_ref, dec_ref = ref_wcs.all_pix2world(x_flat, y_flat, 1)  # 1-based origin
+
+    # New WCS transform
+    ra_new, dec_new = new_wcs.all_pix2world(x_flat, y_flat, 1)
+
+    np.testing.assert_allclose(
+        ra_new, ra_ref, rtol=1e-10, atol=1e-8, err_msg="RA mismatch"
+    )
+    np.testing.assert_allclose(
+        dec_new, dec_ref, rtol=1e-10, atol=1e-8, err_msg="Dec mismatch"
+    )
+
+    # 5. Strict Header Comparison
+    # Verify that the exported header contains identical critical keys
+    h_ref = ref_wcs.to_header(relax=True)
+    h_new = new_wcs.to_header(relax=True)
+
+    keys_to_check = [
+        "CRVAL1",
+        "CRVAL2",
+        "CRPIX1",
+        "CRPIX2",
+        "A_ORDER",
+        "B_ORDER",
+        "AP_ORDER",
+        "BP_ORDER",
+    ]
+
+    for key in keys_to_check:
+        if key in h_ref:
+            # Check numbers with tolerance, integers/strings exact
+            if isinstance(h_new[key], (float, np.floating)):
+                assert np.isclose(h_new[key], h_ref[key]), f"{key} mismatch"
+            else:
+                assert h_new[key] == h_ref[key], f"{key} mismatch"

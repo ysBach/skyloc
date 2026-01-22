@@ -1,8 +1,12 @@
 import numpy as np
+import logging
 from numba import njit, float64, int64, boolean, prange
 from numba.experimental import jitclass
 
 __all__ = ["FastTanSipWCS", "infov2d", "all_world2pix_infov"]
+
+logger = logging.getLogger(__name__)
+
 
 # Solver Constants
 SOLVER_TOL = 1e-6
@@ -283,17 +287,29 @@ def create_wcs_from_dict(hdr):
     """Factory independent of class."""
     crval = np.array([hdr.get("CRVAL1", 0.0), hdr.get("CRVAL2", 0.0)], dtype=np.float64)
     crpix = np.array([hdr.get("CRPIX1", 0.0), hdr.get("CRPIX2", 0.0)], dtype=np.float64)
-    cdelt = np.array([hdr.get("CDELT1", 1.0), hdr.get("CDELT2", 1.0)], dtype=np.float64)
-    pc = np.array(
-        [
-            [hdr.get("PC1_1", 1.0), hdr.get("PC1_2", 0.0)],
-            [hdr.get("PC2_1", 0.0), hdr.get("PC2_2", 1.0)],
-        ],
-        dtype=np.float64,
-    )
+    # Prioritize CD matrix if present (consistent with WCSLIB/Astropy)
+    has_cd = "CD1_1" in hdr or "CD1_2" in hdr or "CD2_1" in hdr or "CD2_2" in hdr
 
-    pc[0, :] *= cdelt[0]
-    pc[1, :] *= cdelt[1]
+    if has_cd:
+        pc = np.array(
+            [
+                [hdr.get("CD1_1", 0.0), hdr.get("CD1_2", 0.0)],
+                [hdr.get("CD2_1", 0.0), hdr.get("CD2_2", 0.0)],
+            ],
+            dtype=np.float64,
+        )
+    else:
+        cdelt = np.array([hdr.get("CDELT1", 1.0), hdr.get("CDELT2", 1.0)], dtype=np.float64)
+        pc = np.array(
+            [
+                [hdr.get("PC1_1", 1.0), hdr.get("PC1_2", 0.0)],
+                [hdr.get("PC2_1", 0.0), hdr.get("PC2_2", 1.0)],
+            ],
+            dtype=np.float64,
+        )
+
+        pc[0, :] *= cdelt[0]
+        pc[1, :] *= cdelt[1]
 
     # Compute max orders for zero-padding optimization
     a_ord = int(hdr.get("A_ORDER", 0))
@@ -380,6 +396,7 @@ class FastTanSipWCS:
     __slots__ = ("_wcs", "parallel_threshold")
 
     def __init__(self, hdr_dict, parallel_threshold=2000):
+        logger.debug("Initializing FastTanSipWCS with parallel_threshold=%d", parallel_threshold)
         self._wcs = create_wcs_from_dict(hdr_dict)
         self.parallel_threshold = parallel_threshold
 
@@ -455,6 +472,62 @@ class FastTanSipWCS:
         x, y = _batch_world2pix(ra_flat, dec_flat, self._wcs, origin)
 
         return x.reshape(orig_shape), y.reshape(orig_shape)
+
+    def to_astropy(self):
+        """
+        Convert this FastTanSipWCS object to an astropy.wcs.WCS object.
+
+        Returns
+        -------
+        wcs : astropy.wcs.WCS
+            The equivalent Astropy WCS object.
+        """
+        from astropy.wcs import WCS, Sip
+        from astropy.io import fits
+
+        # 1. Create a minimal header
+        header = fits.Header()
+
+        # 2. Standard WCS keywords
+        header["NAXIS"] = 2
+        header["CTYPE1"] = "RA---TAN-SIP" if self._wcs.has_sip else "RA---TAN"
+        header["CTYPE2"] = "DEC--TAN-SIP" if self._wcs.has_sip else "DEC--TAN"
+        header["CRVAL1"] = self._wcs.crval[0]
+        header["CRVAL2"] = self._wcs.crval[1]
+        header["CRPIX1"] = self._wcs.crpix[0]
+        header["CRPIX2"] = self._wcs.crpix[1]
+
+        # Use CD matrix convention (which includes CDELT/PC effects)
+        # FastTanSipWCS stores the full linear transformation in .pc
+        header["CD1_1"] = self._wcs.pc[0, 0]
+        header["CD1_2"] = self._wcs.pc[0, 1]
+        header["CD2_1"] = self._wcs.pc[1, 0]
+        header["CD2_2"] = self._wcs.pc[1, 1]
+
+        # 3. SIP Coefficients
+        if self._wcs.has_sip or self._wcs.has_sip_inv:
+            header["A_ORDER"] = self._wcs.a_order
+            header["B_ORDER"] = self._wcs.b_order
+
+            # Helper to write matrix to header
+            def _write_sip(matrix, prefix, order):
+                for i in range(order + 1):
+                    for j in range(order + 1):
+                        val = matrix[i, j]
+                        if val != 0 and (i + j <= order):
+                            header[f"{prefix}_{i}_{j}"] = val
+
+            _write_sip(self._wcs.sip_a, "A", self._wcs.a_order)
+            _write_sip(self._wcs.sip_b, "B", self._wcs.b_order)
+
+            # Inverse SIP
+            if self._wcs.has_sip_inv:
+                header["AP_ORDER"] = self._wcs.ap_order
+                header["BP_ORDER"] = self._wcs.bp_order
+                _write_sip(self._wcs.sip_ap, "AP", self._wcs.ap_order)
+                _write_sip(self._wcs.sip_bp, "BP", self._wcs.bp_order)
+
+        return WCS(header)
 
     def __repr__(self):
         return f"<FastTanSipWCS: CRVAL={self._wcs.crval}, CRPIX={self._wcs.crpix}>"
