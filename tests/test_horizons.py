@@ -6,6 +6,7 @@ query results with kete calculations (that's done in test_propagate.py).
 Note: Tests marked @pytest.mark.network require internet access and may
 be slow due to API calls.
 """
+
 import numpy as np
 import pytest
 from astropy.table import Table
@@ -99,7 +100,9 @@ class TestHorizonsVectorQuery:
         from skyloc.jplhorizons import horizons_vector
 
         vec_normal = horizons_vector(epochs=[2460600.5], obsid="399", location="@10")
-        vec_invert = horizons_vector(epochs=[2460600.5], obsid="399", location="@10", invert=True)
+        vec_invert = horizons_vector(
+            epochs=[2460600.5], obsid="399", location="@10", invert=True
+        )
 
         # x values should be negated
         np.testing.assert_allclose(

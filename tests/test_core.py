@@ -7,6 +7,7 @@ Reference state vectors from kete propagation:
 - Position: [0.0948511064, 2.2950080713, 0.2039276033] AU
 - Velocity: [-0.0116237533, 0.0023363467, -0.0020398849] AU/day
 """
+
 import numpy as np
 import pytest
 import pandas as pd
@@ -100,39 +101,51 @@ class TestSSOLocatorPropagation:
     Velocity: [-0.0116237533, 0.0023363467, -0.0020398849] AU/day
     """
 
-    def test_propagate_n_body_sets_jd0(self, sample_orb_asteroid, sample_fovlist, sample_jd_tdb):
+    def test_propagate_n_body_sets_jd0(
+        self, sample_orb_asteroid, sample_fovlist, sample_jd_tdb
+    ):
         """Propagation sets jd0 correctly."""
         loc = SSOLocator(fovs=sample_fovlist, orb=sample_orb_asteroid)
         loc.propagate_n_body(jd0=sample_jd_tdb, suppress_errors=True)
         assert np.isclose(loc.jd0, sample_jd_tdb, atol=1e-10)
 
-    def test_propagate_n_body_state_count(self, sample_orb_asteroid, sample_fovlist, sample_jd_tdb):
+    def test_propagate_n_body_state_count(
+        self, sample_orb_asteroid, sample_fovlist, sample_jd_tdb
+    ):
         """Propagation creates correct number of states."""
         loc = SSOLocator(fovs=sample_fovlist, orb=sample_orb_asteroid)
         loc.propagate_n_body(jd0=sample_jd_tdb, suppress_errors=True)
         assert loc.states_propagated_jd0 is not None
         assert len(loc.states_propagated_jd0) == 1
 
-    def test_propagate_with_mean_jd(self, sample_orb_asteroid, sample_fovlist, sample_jd_tdb):
+    def test_propagate_with_mean_jd(
+        self, sample_orb_asteroid, sample_fovlist, sample_jd_tdb
+    ):
         """Propagation with callable jd0 (np.mean) uses mean of FOV JDs."""
         loc = SSOLocator(fovs=sample_fovlist, orb=sample_orb_asteroid)
         loc.propagate_n_body(jd0=np.mean, suppress_errors=True)
         expected_jd = sample_jd_tdb + 1.0
         assert np.isclose(loc.jd0, expected_jd, atol=1e-10)
 
-    def test_propagated_state_desig(self, sample_orb_asteroid, sample_fovlist, sample_jd_tdb):
+    def test_propagated_state_desig(
+        self, sample_orb_asteroid, sample_fovlist, sample_jd_tdb
+    ):
         """Propagated state has correct designation."""
         loc = SSOLocator(fovs=sample_fovlist, orb=sample_orb_asteroid)
         loc.propagate_n_body(jd0=sample_jd_tdb, suppress_errors=True)
         assert loc.states_propagated_jd0[0].desig == "15 Eunomia"
 
-    def test_propagated_state_jd(self, sample_orb_asteroid, sample_fovlist, sample_jd_tdb):
+    def test_propagated_state_jd(
+        self, sample_orb_asteroid, sample_fovlist, sample_jd_tdb
+    ):
         """Propagated state has correct JD."""
         loc = SSOLocator(fovs=sample_fovlist, orb=sample_orb_asteroid)
         loc.propagate_n_body(jd0=sample_jd_tdb, suppress_errors=True)
         assert np.isclose(loc.states_propagated_jd0[0].jd, sample_jd_tdb, atol=1e-10)
 
-    def test_propagated_position_values(self, sample_orb_asteroid, sample_fovlist, sample_jd_tdb):
+    def test_propagated_position_values(
+        self, sample_orb_asteroid, sample_fovlist, sample_jd_tdb
+    ):
         """Propagated position should match reference values."""
         loc = SSOLocator(fovs=sample_fovlist, orb=sample_orb_asteroid)
         loc.propagate_n_body(jd0=sample_jd_tdb, suppress_errors=True)
@@ -142,7 +155,9 @@ class TestSSOLocatorPropagation:
         expected = np.array([0.0948511064, 2.2950080713, 0.2039276033])
         np.testing.assert_allclose(pos, expected, atol=1e-6)
 
-    def test_propagated_velocity_values(self, sample_orb_asteroid, sample_fovlist, sample_jd_tdb):
+    def test_propagated_velocity_values(
+        self, sample_orb_asteroid, sample_fovlist, sample_jd_tdb
+    ):
         """Propagated velocity should match reference values."""
         loc = SSOLocator(fovs=sample_fovlist, orb=sample_orb_asteroid)
         loc.propagate_n_body(jd0=sample_jd_tdb, suppress_errors=True)
@@ -152,21 +167,25 @@ class TestSSOLocatorPropagation:
         expected = np.array([-0.0116237533, 0.0023363467, -0.0020398849])
         np.testing.assert_allclose(vel, expected, atol=1e-8)
 
-    def test_propagated_distance_from_sun(self, sample_orb_asteroid, sample_fovlist, sample_jd_tdb):
+    def test_propagated_distance_from_sun(
+        self, sample_orb_asteroid, sample_fovlist, sample_jd_tdb
+    ):
         """Heliocentric distance should match reference value."""
         loc = SSOLocator(fovs=sample_fovlist, orb=sample_orb_asteroid)
         loc.propagate_n_body(jd0=sample_jd_tdb, suppress_errors=True)
         state = loc.states_propagated_jd0[0]
-        r_hel = np.sqrt(state.pos[0]**2 + state.pos[1]**2 + state.pos[2]**2)
+        r_hel = np.sqrt(state.pos[0] ** 2 + state.pos[1] ** 2 + state.pos[2] ** 2)
         # Reference: 2.306002 AU
         assert np.isclose(r_hel, 2.306002, atol=1e-5), f"r_hel={r_hel:.6f} AU"
 
-    def test_propagated_velocity_magnitude(self, sample_orb_asteroid, sample_fovlist, sample_jd_tdb):
+    def test_propagated_velocity_magnitude(
+        self, sample_orb_asteroid, sample_fovlist, sample_jd_tdb
+    ):
         """Orbital velocity magnitude should match reference value."""
         loc = SSOLocator(fovs=sample_fovlist, orb=sample_orb_asteroid)
         loc.propagate_n_body(jd0=sample_jd_tdb, suppress_errors=True)
         state = loc.states_propagated_jd0[0]
-        v_mag = np.sqrt(state.vel[0]**2 + state.vel[1]**2 + state.vel[2]**2)
+        v_mag = np.sqrt(state.vel[0] ** 2 + state.vel[1] ** 2 + state.vel[2] ** 2)
         # Reference: sqrt(0.0116^2 + 0.0023^2 + 0.0020^2) ≈ 0.01193 AU/day
         expected_v = np.sqrt(0.0116237533**2 + 0.0023363467**2 + 0.0020398849**2)
         assert np.isclose(v_mag, expected_v, atol=1e-8), f"v={v_mag:.8f} AU/day"
@@ -175,14 +194,18 @@ class TestSSOLocatorPropagation:
 class TestSSOLocatorMultiObject:
     """Test SSOLocator handling of multiple objects (Eunomia + Eros)."""
 
-    def test_multi_object_pipeline(self, sample_orb_asteroid, sample_orb_eros, sample_fov_earth_2024):
+    def test_multi_object_pipeline(
+        self, sample_orb_asteroid, sample_orb_eros, sample_fov_earth_2024
+    ):
         """End-to-end test for 2 objects: propagation -> fov check -> flux."""
         # Setup
         orb = pd.concat([sample_orb_asteroid, sample_orb_eros], ignore_index=True)
         loc = SSOLocator(fovs=sample_fov_earth_2024, orb=orb)
 
         # Propagate
-        loc.propagate_n_body(jd0=sample_fov_earth_2024.observer.jd, include_asteroids=True)
+        loc.propagate_n_body(
+            jd0=sample_fov_earth_2024.observer.jd, include_asteroids=True
+        )
         assert len(loc.states_propagated_jd0) == 2
 
         # FOV Check
@@ -205,49 +228,53 @@ class TestSSOLocatorMultiObject:
         pos_eros = np.array([1.324107311, 0.525501167, 0.265860328])
 
         # Get Rows
-        row_eun = eph[eph['desig'].str.contains('Eunomia')].iloc[0]
-        row_eros = eph[eph['desig'].str.contains('Eros')].iloc[0]
+        row_eun = eph[eph["desig"].str.contains("Eunomia")].iloc[0]
+        row_eros = eph[eph["desig"].str.contains("Eros")].iloc[0]
 
         # --- Eunomia Validation ---
         # Magnitudes
-        assert np.isclose(row_eun['vmag'], 10.45, atol=0.1)
+        assert np.isclose(row_eun["vmag"], 10.45, atol=0.1)
 
         # Geometries
         # r_hel
         expected_r_hel_eun = np.linalg.norm(pos_eun)
-        assert np.isclose(row_eun['r_hel'], expected_r_hel_eun, atol=1e-4)
+        assert np.isclose(row_eun["r_hel"], expected_r_hel_eun, atol=1e-4)
 
         # r_obs
         expected_r_obs_eun = np.linalg.norm(pos_eun - pos_earth)
-        assert np.isclose(row_eun['r_obs'], expected_r_obs_eun, atol=1e-4)
+        assert np.isclose(row_eun["r_obs"], expected_r_obs_eun, atol=1e-4)
 
         # Phase (alpha)
         # Cos(alpha) = dot(Sun->Obj, Obs->Obj) / (|Sun->Obj| * |Obs->Obj|)
         vec_so = pos_eun
         vec_oo = pos_eun - pos_earth
-        cos_alpha = np.dot(vec_so, vec_oo) / (np.linalg.norm(vec_so) * np.linalg.norm(vec_oo))
+        cos_alpha = np.dot(vec_so, vec_oo) / (
+            np.linalg.norm(vec_so) * np.linalg.norm(vec_oo)
+        )
         expected_alpha_eun = np.degrees(np.arccos(cos_alpha))
-        assert np.isclose(row_eun['alpha'], expected_alpha_eun, atol=0.1)
+        assert np.isclose(row_eun["alpha"], expected_alpha_eun, atol=0.1)
 
         # --- Eros Validation ---
         # Magnitudes
-        assert np.isclose(row_eros['vmag'], 13.14, atol=0.2)
+        assert np.isclose(row_eros["vmag"], 13.14, atol=0.2)
 
         # Geometries
         # r_hel
         expected_r_hel_eros = np.linalg.norm(pos_eros)
-        assert np.isclose(row_eros['r_hel'], expected_r_hel_eros, atol=1e-4)
+        assert np.isclose(row_eros["r_hel"], expected_r_hel_eros, atol=1e-4)
 
         # r_obs
         expected_r_obs_eros = np.linalg.norm(pos_eros - pos_earth)
-        assert np.isclose(row_eros['r_obs'], expected_r_obs_eros, atol=1e-4)
+        assert np.isclose(row_eros["r_obs"], expected_r_obs_eros, atol=1e-4)
 
         # Phase (alpha)
         vec_so = pos_eros
         vec_oo = pos_eros - pos_earth
-        cos_alpha_eros = np.dot(vec_so, vec_oo) / (np.linalg.norm(vec_so) * np.linalg.norm(vec_oo))
+        cos_alpha_eros = np.dot(vec_so, vec_oo) / (
+            np.linalg.norm(vec_so) * np.linalg.norm(vec_oo)
+        )
         expected_alpha_eros = np.degrees(np.arccos(cos_alpha_eros))
-        assert np.isclose(row_eros['alpha'], expected_alpha_eros, atol=0.1)
+        assert np.isclose(row_eros["alpha"], expected_alpha_eros, atol=0.1)
 
 
 @pytest.mark.integration
@@ -259,9 +286,13 @@ class TestSSOLocatorSpiceReplacement:
     data to avoid self-impact issues.
     """
 
-    def test_vesta_gets_spice_state(self, sample_orb_vesta, sample_fovlist, sample_jd_tdb):
+    def test_vesta_gets_spice_state(
+        self, sample_orb_vesta, sample_fovlist, sample_jd_tdb
+    ):
         """Vesta state should match SPICE data after propagation."""
-        loc = SSOLocator(fovs=sample_fovlist, orb=sample_orb_vesta, drop_major_asteroids=False)
+        loc = SSOLocator(
+            fovs=sample_fovlist, orb=sample_orb_vesta, drop_major_asteroids=False
+        )
         loc.propagate_n_body(jd0=sample_jd_tdb, include_asteroids=True)
 
         # Get propagated state
@@ -274,12 +305,14 @@ class TestSSOLocatorSpiceReplacement:
         np.testing.assert_allclose(
             [propagated.pos[0], propagated.pos[1], propagated.pos[2]],
             [expected.pos[0], expected.pos[1], expected.pos[2]],
-            atol=1e-10
+            atol=1e-10,
         )
 
     def test_vesta_not_nan(self, sample_orb_vesta, sample_fovlist, sample_jd_tdb):
         """Vesta state should never be NaN when include_asteroids=True."""
-        loc = SSOLocator(fovs=sample_fovlist, orb=sample_orb_vesta, drop_major_asteroids=False)
+        loc = SSOLocator(
+            fovs=sample_fovlist, orb=sample_orb_vesta, drop_major_asteroids=False
+        )
         loc.propagate_n_body(jd0=sample_jd_tdb, include_asteroids=True)
 
         state = loc.states_propagated_jd0[0]
@@ -311,7 +344,7 @@ class TestSSOLocatorSpiceReplacement:
         np.testing.assert_allclose(
             [vesta_state.pos[0], vesta_state.pos[1], vesta_state.pos[2]],
             [expected_vesta.pos[0], expected_vesta.pos[1], expected_vesta.pos[2]],
-            atol=1e-10
+            atol=1e-10,
         )
 
         # Eunomia should NOT be NaN (it's a regular n-body result)
@@ -323,7 +356,9 @@ class TestSSOLocatorSpiceReplacement:
         """SPICE replacement should work even when loading from cached file."""
         output_file = tmp_path / "test_simstates.parq"
 
-        loc = SSOLocator(fovs=sample_fovlist, orb=sample_orb_vesta, drop_major_asteroids=False)
+        loc = SSOLocator(
+            fovs=sample_fovlist, orb=sample_orb_vesta, drop_major_asteroids=False
+        )
 
         # First run: compute and save (with include_asteroids=True)
         loc.propagate_n_body(
@@ -336,9 +371,14 @@ class TestSSOLocatorSpiceReplacement:
         ]
 
         # Second run: load from cache (should STILL apply SPICE replacement)
-        loc2 = SSOLocator(fovs=sample_fovlist, orb=sample_orb_vesta, drop_major_asteroids=False)
+        loc2 = SSOLocator(
+            fovs=sample_fovlist, orb=sample_orb_vesta, drop_major_asteroids=False
+        )
         loc2.propagate_n_body(
-            jd0=sample_jd_tdb, include_asteroids=True, output=output_file, overwrite=False
+            jd0=sample_jd_tdb,
+            include_asteroids=True,
+            output=output_file,
+            overwrite=False,
         )
         second_pos = [
             loc2.states_propagated_jd0[0].pos[0],
@@ -349,14 +389,10 @@ class TestSSOLocatorSpiceReplacement:
         # Both should match SPICE data
         expected = kete.spice.get_state("vesta", sample_jd_tdb)
         np.testing.assert_allclose(
-            first_pos,
-            [expected.pos[0], expected.pos[1], expected.pos[2]],
-            atol=1e-10
+            first_pos, [expected.pos[0], expected.pos[1], expected.pos[2]], atol=1e-10
         )
         np.testing.assert_allclose(
-            second_pos,
-            [expected.pos[0], expected.pos[1], expected.pos[2]],
-            atol=1e-10
+            second_pos, [expected.pos[0], expected.pos[1], expected.pos[2]], atol=1e-10
         )
 
     def test_fov_state_check_no_asteroid_spice_errors(
@@ -380,8 +416,14 @@ class TestSSOLocatorSpiceReplacement:
         logger.addHandler(handler)
 
         try:
-            loc = SSOLocator(fovs=sample_fov_earth_2024, orb=sample_orb_vesta, drop_major_asteroids=False)
-            loc.propagate_n_body(jd0=sample_fov_earth_2024.observer.jd, include_asteroids=True)
+            loc = SSOLocator(
+                fovs=sample_fov_earth_2024,
+                orb=sample_orb_vesta,
+                drop_major_asteroids=False,
+            )
+            loc.propagate_n_body(
+                jd0=sample_fov_earth_2024.observer.jd, include_asteroids=True
+            )
             loc.fov_state_check(include_asteroids=True, use_spice_for_loaded=True)
 
             # Check logs for asteroid-related errors
@@ -403,7 +445,9 @@ class TestSSOLocatorSpiceReplacement:
 
         Tests propagate_n_body -> fov_state_check -> calc_ephems for a loaded asteroid.
         """
-        loc = SSOLocator(fovs=sample_fov_earth_2024, orb=sample_orb_vesta, drop_major_asteroids=False)
+        loc = SSOLocator(
+            fovs=sample_fov_earth_2024, orb=sample_orb_vesta, drop_major_asteroids=False
+        )
 
         # Step 1: Propagate (should SPICE-replace Vesta)
         jd = sample_fov_earth_2024.observer.jd
@@ -416,7 +460,7 @@ class TestSSOLocatorSpiceReplacement:
             [propagated.pos[0], propagated.pos[1], propagated.pos[2]],
             [expected_spice.pos[0], expected_spice.pos[1], expected_spice.pos[2]],
             atol=1e-10,
-            err_msg="Vesta should have SPICE position after propagation"
+            err_msg="Vesta should have SPICE position after propagation",
         )
 
         # Step 2: FOV state check (should work without errors)
@@ -425,7 +469,8 @@ class TestSSOLocatorSpiceReplacement:
 
         # Step 3: If Vesta is in FOV, calculate ephemeris
         if loc.fov_check_simstates and any(
-            "4" in [s.desig for s in ss.states] or "vesta" in [s.desig.lower() for s in ss.states]
+            "4" in [s.desig for s in ss.states]
+            or "vesta" in [s.desig.lower() for s in ss.states]
             for ss in loc.fov_check_simstates
         ):
             loc.calc_ephems()

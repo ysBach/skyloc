@@ -2,10 +2,9 @@
 
 Tests verify SPICE-based ephemerides and static FOV checks.
 """
-import numpy as np
+
 import pandas as pd
 import pytest
-import kete
 
 from skyloc.core import SpiceLocator, StarLocator
 from skyloc.keteutils import (
@@ -130,17 +129,13 @@ class TestSpiceLocator:
 
     def test_init_planets_only(self, sample_fovlist):
         """SpiceLocator can be planets only."""
-        sl = SpiceLocator(
-            sample_fovlist, include_planets=True, include_asteroids=False
-        )
+        sl = SpiceLocator(sample_fovlist, include_planets=True, include_asteroids=False)
         assert "599" in sl.targets
         assert "ceres" not in sl.targets
 
     def test_init_asteroids_only(self, sample_fovlist):
         """SpiceLocator can be asteroids only."""
-        sl = SpiceLocator(
-            sample_fovlist, include_planets=False, include_asteroids=True
-        )
+        sl = SpiceLocator(sample_fovlist, include_planets=False, include_asteroids=True)
         assert "599" not in sl.targets
         assert "ceres" in sl.targets
 
@@ -177,12 +172,14 @@ class TestStarLocator:
     @pytest.fixture
     def sample_stars(self):
         """Sample star catalog with known positions."""
-        return pd.DataFrame({
-            "desig": ["Vega", "Sirius", "Arcturus"],
-            "ra": [279.2347, 101.2875, 213.9153],
-            "dec": [38.7837, -16.7161, 19.1824],
-            "vmag": [0.03, -1.46, -0.05],
-        })
+        return pd.DataFrame(
+            {
+                "desig": ["Vega", "Sirius", "Arcturus"],
+                "ra": [279.2347, 101.2875, 213.9153],
+                "dec": [38.7837, -16.7161, 19.1824],
+                "vmag": [0.03, -1.46, -0.05],
+            }
+        )
 
     def test_init_with_sources(self, sample_fovlist, sample_stars):
         """StarLocator initializes with sources."""
@@ -204,10 +201,12 @@ class TestStarLocator:
 
     def test_set_sources_auto_desig(self, sample_fovlist):
         """Auto-generates designations if not provided."""
-        sources = pd.DataFrame({
-            "ra": [0.0, 90.0, 180.0],
-            "dec": [0.0, 45.0, -45.0],
-        })
+        sources = pd.DataFrame(
+            {
+                "ra": [0.0, 90.0, 180.0],
+                "dec": [0.0, 45.0, -45.0],
+            }
+        )
         sl = StarLocator(sample_fovlist)
         sl.set_sources(sources)
         assert "desig" in sl.sources.columns

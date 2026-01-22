@@ -1,4 +1,5 @@
 """Pytest configuration and fixtures for skyloc tests."""
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -21,27 +22,29 @@ def sample_orb_asteroid():
 
     Returns a DataFrame with orbital elements in kete-style column names.
     """
-    return pd.DataFrame({
-        "desig": ["15 Eunomia"],
-        "ecc": [0.187781330746169],
-        "incl": [11.76143490937041],
-        "peri_dist": [2.14603288941038],  # q from JPL
-        "peri_arg": [98.50719966771784],
-        "lon_node": [292.8812264964728],
-        "peri_time": [2460504.935745898130],
-        "epoch": [2461000.5],
-        "H": [5.43],
-        "G": [0.23],
-        "M1": [np.nan],
-        "M2": [np.nan],
-        "K1": [np.nan],
-        "K2": [np.nan],
-        "PC": [np.nan],
-        "A1": [0.0],
-        "A2": [0.0],
-        "A3": [0.0],
-        "DT": [0.0],
-    })
+    return pd.DataFrame(
+        {
+            "desig": ["15 Eunomia"],
+            "ecc": [0.187781330746169],
+            "incl": [11.76143490937041],
+            "peri_dist": [2.14603288941038],  # q from JPL
+            "peri_arg": [98.50719966771784],
+            "lon_node": [292.8812264964728],
+            "peri_time": [2460504.935745898130],
+            "epoch": [2461000.5],
+            "H": [5.43],
+            "G": [0.23],
+            "M1": [np.nan],
+            "M2": [np.nan],
+            "K1": [np.nan],
+            "K2": [np.nan],
+            "PC": [np.nan],
+            "A1": [0.0],
+            "A2": [0.0],
+            "A3": [0.0],
+            "DT": [0.0],
+        }
+    )
 
 
 @pytest.fixture
@@ -50,27 +53,29 @@ def sample_orb_eros():
 
     Elements from JPL SBDB (epoch JD 2461000.5) with full precision.
     """
-    return pd.DataFrame({
-        "desig": ["433 Eros"],
-        "ecc": [0.2228359407071628],
-        "incl": [10.82846651399785],
-        "peri_dist": [1.13319923411471],
-        "peri_arg": [178.9297536744151],
-        "lon_node": [304.2701025753316],
-        "peri_time": [2461088.8312870553],
-        "epoch": [2461000.5],
-        "H": [10.38],
-        "G": [0.46],
-        "M1": [np.nan],
-        "M2": [np.nan],
-        "K1": [np.nan],
-        "K2": [np.nan],
-        "PC": [np.nan],
-        "A1": [0.0],
-        "A2": [0.0],
-        "A3": [0.0],
-        "DT": [0.0],
-    })
+    return pd.DataFrame(
+        {
+            "desig": ["433 Eros"],
+            "ecc": [0.2228359407071628],
+            "incl": [10.82846651399785],
+            "peri_dist": [1.13319923411471],
+            "peri_arg": [178.9297536744151],
+            "lon_node": [304.2701025753316],
+            "peri_time": [2461088.8312870553],
+            "epoch": [2461000.5],
+            "H": [10.38],
+            "G": [0.46],
+            "M1": [np.nan],
+            "M2": [np.nan],
+            "K1": [np.nan],
+            "K2": [np.nan],
+            "PC": [np.nan],
+            "A1": [0.0],
+            "A2": [0.0],
+            "A3": [0.0],
+            "DT": [0.0],
+        }
+    )
 
 
 @pytest.fixture
@@ -82,27 +87,29 @@ def sample_orb_vesta():
 
     Elements from JPL SBDB (epoch JD 2461000.5).
     """
-    return pd.DataFrame({
-        "desig": ["4"],  # Use number designation to match KETE_ASTEROIDS_PHYSICS
-        "ecc": [0.08872646074073799],
-        "incl": [7.140497108622466],
-        "peri_dist": [2.151630078720154],
-        "peri_arg": [150.7290823346889],
-        "lon_node": [103.8092024623738],
-        "peri_time": [2461217.7097671945],
-        "epoch": [2461000.5],
-        "H": [3.25],
-        "G": [0.32],
-        "M1": [np.nan],
-        "M2": [np.nan],
-        "K1": [np.nan],
-        "K2": [np.nan],
-        "PC": [np.nan],
-        "A1": [0.0],
-        "A2": [0.0],
-        "A3": [0.0],
-        "DT": [0.0],
-    })
+    return pd.DataFrame(
+        {
+            "desig": ["4"],  # Use number designation to match KETE_ASTEROIDS_PHYSICS
+            "ecc": [0.08872646074073799],
+            "incl": [7.140497108622466],
+            "peri_dist": [2.151630078720154],
+            "peri_arg": [150.7290823346889],
+            "lon_node": [103.8092024623738],
+            "peri_time": [2461217.7097671945],
+            "epoch": [2461000.5],
+            "H": [3.25],
+            "G": [0.32],
+            "M1": [np.nan],
+            "M2": [np.nan],
+            "K1": [np.nan],
+            "K2": [np.nan],
+            "PC": [np.nan],
+            "A1": [0.0],
+            "A2": [0.0],
+            "A3": [0.0],
+            "DT": [0.0],
+        }
+    )
 
 
 @pytest.fixture
@@ -111,27 +118,29 @@ def sample_orb_comet():
 
     Returns a DataFrame with orbital elements and comet magnitude params.
     """
-    return pd.DataFrame({
-        "desig": ["1P/Halley"],
-        "ecc": [0.96714],
-        "incl": [162.26],
-        "peri_dist": [0.586],
-        "peri_arg": [111.33],
-        "lon_node": [58.42],
-        "peri_time": [2446467.4],
-        "epoch": [2449400.5],
-        "H": [np.nan],
-        "G": [np.nan],
-        "M1": [5.5],
-        "M2": [13.8],
-        "K1": [4.0],
-        "K2": [10.0],
-        "PC": [0.03],
-        "A1": [0.01],
-        "A2": [0.005],
-        "A3": [0.0],
-        "DT": [0.0],
-    })
+    return pd.DataFrame(
+        {
+            "desig": ["1P/Halley"],
+            "ecc": [0.96714],
+            "incl": [162.26],
+            "peri_dist": [0.586],
+            "peri_arg": [111.33],
+            "lon_node": [58.42],
+            "peri_time": [2446467.4],
+            "epoch": [2449400.5],
+            "H": [np.nan],
+            "G": [np.nan],
+            "M1": [5.5],
+            "M2": [13.8],
+            "K1": [4.0],
+            "K2": [10.0],
+            "PC": [0.03],
+            "A1": [0.01],
+            "A2": [0.005],
+            "A3": [0.0],
+            "DT": [0.0],
+        }
+    )
 
 
 @pytest.fixture
@@ -228,6 +237,8 @@ def rtol():
 # ==============================================================================
 def pytest_configure(config):
     """Configure custom pytest markers."""
-    config.addinivalue_line("markers", "slow: marks tests as slow (deselect with -m 'not slow')")
+    config.addinivalue_line(
+        "markers", "slow: marks tests as slow (deselect with -m 'not slow')"
+    )
     config.addinivalue_line("markers", "network: marks tests requiring network access")
     config.addinivalue_line("markers", "integration: marks tests as integration tests")

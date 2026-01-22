@@ -10,6 +10,7 @@ Reference values (geocentric observer):
 - RA = 76.476535°, Dec = 31.449820°
 - sky_motion = 0.551505 arcsec/min
 """
+
 import numpy as np
 import pytest
 import kete
@@ -62,7 +63,9 @@ class TestCalcGeometries:
         fov = kete.fov.ConeFOV(observer=observer, pointing=pointing, angle=180.0)
 
         states = kete.mpc.table_to_states(sample_orb_asteroid)
-        propagated = kete.propagate_n_body(states, jd=sample_jd_tdb, suppress_errors=True)
+        propagated = kete.propagate_n_body(
+            states, jd=sample_jd_tdb, suppress_errors=True
+        )
         simulstates = kete.SimultaneousStates(propagated, fov=fov)
         return calc_geometries(simulstates, rates_in_arcsec_per_min=True)
 
@@ -70,9 +73,20 @@ class TestCalcGeometries:
     def test_output_keys(self, skyloc_geoms_geocentric):
         """Geometry output has all expected keys."""
         expected_keys = [
-            "desig", "alpha", "r_hel", "r_obs", "ra", "dec",
-            "hel_ecl_lon", "hel_ecl_lat", "obs_ecl_lon", "obs_ecl_lat",
-            "dra*cosdec/dt", "ddec/dt", "sky_motion", "sky_motion_pa"
+            "desig",
+            "alpha",
+            "r_hel",
+            "r_obs",
+            "ra",
+            "dec",
+            "hel_ecl_lon",
+            "hel_ecl_lat",
+            "obs_ecl_lon",
+            "obs_ecl_lat",
+            "dra*cosdec/dt",
+            "ddec/dt",
+            "sky_motion",
+            "sky_motion_pa",
         ]
         for key in expected_keys:
             assert key in skyloc_geoms_geocentric, f"Missing key: {key}"
@@ -117,7 +131,9 @@ class TestCalcGeometries:
         """Sky motion should match reference value."""
         motion = skyloc_geoms_geocentric["sky_motion"][0]
         # Reference: 0.551505 arcsec/min
-        assert np.isclose(motion, 0.551505, atol=0.001), f"motion={motion:.6f} arcsec/min"
+        assert np.isclose(
+            motion, 0.551505, atol=0.001
+        ), f"motion={motion:.6f} arcsec/min"
 
     @pytest.mark.slow
     def test_sky_motion_consistency(self, skyloc_geoms_geocentric):
@@ -145,7 +161,9 @@ class TestCalcGeometriesPhysics:
         fov = kete.fov.ConeFOV(observer=observer, pointing=pointing, angle=180.0)
 
         states = kete.mpc.table_to_states(sample_orb_asteroid)
-        propagated = kete.propagate_n_body(states, jd=sample_jd_tdb, suppress_errors=True)
+        propagated = kete.propagate_n_body(
+            states, jd=sample_jd_tdb, suppress_errors=True
+        )
         simulstates = kete.SimultaneousStates(propagated, fov=fov)
         return calc_geometries(simulstates, rates_in_arcsec_per_min=True), earth_state
 
@@ -161,16 +179,18 @@ class TestCalcGeometriesPhysics:
         alpha = geoms["alpha"][0]
 
         # Observer-Sun distance
-        r_sun_obs = np.sqrt(earth_state.pos[0]**2 + earth_state.pos[1]**2 + earth_state.pos[2]**2)
+        r_sun_obs = np.sqrt(
+            earth_state.pos[0] ** 2 + earth_state.pos[1] ** 2 + earth_state.pos[2] ** 2
+        )
 
         # Law of cosines
         cos_alpha_computed = (r_hel**2 + r_obs**2 - r_sun_obs**2) / (2 * r_hel * r_obs)
         alpha_computed = np.rad2deg(np.arccos(cos_alpha_computed))
 
         # Should match to 0.01°
-        assert np.isclose(alpha, alpha_computed, atol=0.01), (
-            f"α={alpha:.4f}°, law_of_cosines={alpha_computed:.4f}°"
-        )
+        assert np.isclose(
+            alpha, alpha_computed, atol=0.01
+        ), f"α={alpha:.4f}°, law_of_cosines={alpha_computed:.4f}°"
 
 
 @pytest.mark.network
@@ -209,29 +229,35 @@ class TestHorizonsKeteCrossValidation:
         fov = kete.fov.ConeFOV(observer=observer, pointing=pointing, angle=180.0)
 
         states = kete.mpc.table_to_states(sample_orb_asteroid)
-        propagated = kete.propagate_n_body(states, jd=sample_jd_tdb, suppress_errors=True)
+        propagated = kete.propagate_n_body(
+            states, jd=sample_jd_tdb, suppress_errors=True
+        )
         simulstates = kete.SimultaneousStates(propagated, fov=fov)
         return calc_geometries(simulstates, rates_in_arcsec_per_min=True)
 
-    def test_heliocentric_distance_matches(self, horizons_eunomia, skyloc_eunomia_geocentric):
+    def test_heliocentric_distance_matches(
+        self, horizons_eunomia, skyloc_eunomia_geocentric
+    ):
         """Horizons and kete r_hel should match within 1e-5 AU."""
         horizons_r = horizons_eunomia["r_hel"]
         kete_r = skyloc_eunomia_geocentric["r_hel"][0]
 
         diff = abs(horizons_r - kete_r)
-        assert np.isclose(horizons_r, kete_r, atol=1e-4), (
-            f"r_hel: Horizons={horizons_r:.6f}, kete={kete_r:.6f}, diff={diff:.6f} AU"
-        )
+        assert np.isclose(
+            horizons_r, kete_r, atol=1e-4
+        ), f"r_hel: Horizons={horizons_r:.6f}, kete={kete_r:.6f}, diff={diff:.6f} AU"
 
-    def test_observer_distance_matches(self, horizons_eunomia, skyloc_eunomia_geocentric):
+    def test_observer_distance_matches(
+        self, horizons_eunomia, skyloc_eunomia_geocentric
+    ):
         """Horizons and kete r_obs should match within 1e-5 AU."""
         horizons_r = horizons_eunomia["r_obs"]
         kete_r = skyloc_eunomia_geocentric["r_obs"][0]
 
         diff = abs(horizons_r - kete_r)
-        assert np.isclose(horizons_r, kete_r, atol=1e-4), (
-            f"r_obs: Horizons={horizons_r:.6f}, kete={kete_r:.6f}, diff={diff:.6f} AU"
-        )
+        assert np.isclose(
+            horizons_r, kete_r, atol=1e-4
+        ), f"r_obs: Horizons={horizons_r:.6f}, kete={kete_r:.6f}, diff={diff:.6f} AU"
 
     def test_ra_matches(self, horizons_eunomia, skyloc_eunomia_geocentric):
         """Horizons and kete RA should match within 0.01°."""
@@ -239,9 +265,9 @@ class TestHorizonsKeteCrossValidation:
         kete_ra = skyloc_eunomia_geocentric["ra"][0]
 
         diff = abs(horizons_ra - kete_ra)
-        assert np.isclose(horizons_ra, kete_ra, atol=0.01), (
-            f"RA: Horizons={horizons_ra:.6f}, kete={kete_ra:.6f}, diff={diff:.6f}°"
-        )
+        assert np.isclose(
+            horizons_ra, kete_ra, atol=0.01
+        ), f"RA: Horizons={horizons_ra:.6f}, kete={kete_ra:.6f}, diff={diff:.6f}°"
 
     def test_dec_matches(self, horizons_eunomia, skyloc_eunomia_geocentric):
         """Horizons and kete Dec should match within 0.01°."""
@@ -249,9 +275,9 @@ class TestHorizonsKeteCrossValidation:
         kete_dec = skyloc_eunomia_geocentric["dec"][0]
 
         diff = abs(horizons_dec - kete_dec)
-        assert np.isclose(horizons_dec, kete_dec, atol=0.01), (
-            f"Dec: Horizons={horizons_dec:.6f}, kete={kete_dec:.6f}, diff={diff:.6f}°"
-        )
+        assert np.isclose(
+            horizons_dec, kete_dec, atol=0.01
+        ), f"Dec: Horizons={horizons_dec:.6f}, kete={kete_dec:.6f}, diff={diff:.6f}°"
 
     def test_phase_angle_matches(self, horizons_eunomia, skyloc_eunomia_geocentric):
         """Horizons and kete phase angle should match within 0.01°."""
@@ -259,18 +285,18 @@ class TestHorizonsKeteCrossValidation:
         kete_alpha = skyloc_eunomia_geocentric["alpha"][0]
 
         diff = abs(horizons_alpha - kete_alpha)
-        assert np.isclose(horizons_alpha, kete_alpha, atol=0.01), (
-            f"α: Horizons={horizons_alpha:.4f}, kete={kete_alpha:.4f}, diff={diff:.4f}°"
-        )
+        assert np.isclose(
+            horizons_alpha, kete_alpha, atol=0.01
+        ), f"α: Horizons={horizons_alpha:.4f}, kete={kete_alpha:.4f}, diff={diff:.4f}°"
 
     def test_sky_motion_matches(self, horizons_eunomia, skyloc_eunomia_geocentric):
         """Horizons and kete sky motion should match within 0.1%."""
         horizons_motion = horizons_eunomia["sky_motion"]
         kete_motion = skyloc_eunomia_geocentric["sky_motion"][0]
 
-        assert np.isclose(horizons_motion, kete_motion, rtol=0.001), (
-            f"motion: Horizons={horizons_motion:.6f}, kete={kete_motion:.6f} arcsec/min"
-        )
+        assert np.isclose(
+            horizons_motion, kete_motion, rtol=0.001
+        ), f"motion: Horizons={horizons_motion:.6f}, kete={kete_motion:.6f} arcsec/min"
 
     def test_hel_ecl_lon_matches(self, horizons_eunomia, skyloc_eunomia_geocentric):
         """Horizons and kete heliocentric ecliptic longitude should match."""
@@ -278,9 +304,9 @@ class TestHorizonsKeteCrossValidation:
         kete_lon = skyloc_eunomia_geocentric["hel_ecl_lon"][0]
 
         diff = abs(horizons_lon - kete_lon)
-        assert np.isclose(horizons_lon, kete_lon, atol=0.01), (
-            f"hel_ecl_lon: Horizons={horizons_lon:.4f}, kete={kete_lon:.4f}, diff={diff:.4f}°"
-        )
+        assert np.isclose(
+            horizons_lon, kete_lon, atol=0.01
+        ), f"hel_ecl_lon: Horizons={horizons_lon:.4f}, kete={kete_lon:.4f}, diff={diff:.4f}°"
 
     def test_hel_ecl_lat_matches(self, horizons_eunomia, skyloc_eunomia_geocentric):
         """Horizons and kete heliocentric ecliptic latitude should match."""
@@ -288,9 +314,9 @@ class TestHorizonsKeteCrossValidation:
         kete_lat = skyloc_eunomia_geocentric["hel_ecl_lat"][0]
 
         diff = abs(horizons_lat - kete_lat)
-        assert np.isclose(horizons_lat, kete_lat, atol=0.01), (
-            f"hel_ecl_lat: Horizons={horizons_lat:.4f}, kete={kete_lat:.4f}, diff={diff:.4f}°"
-        )
+        assert np.isclose(
+            horizons_lat, kete_lat, atol=0.01
+        ), f"hel_ecl_lat: Horizons={horizons_lat:.4f}, kete={kete_lat:.4f}, diff={diff:.4f}°"
 
     def test_obs_ecl_lon_matches(self, horizons_eunomia, skyloc_eunomia_geocentric):
         """Horizons and kete observer-centric ecliptic longitude should match."""
@@ -299,9 +325,9 @@ class TestHorizonsKeteCrossValidation:
 
         diff = abs(horizons_lon - kete_lon)
         # Slightly larger tolerance for observer-centric coordinates
-        assert np.isclose(horizons_lon, kete_lon, atol=0.5), (
-            f"obs_ecl_lon: Horizons={horizons_lon:.4f}, kete={kete_lon:.4f}, diff={diff:.4f}°"
-        )
+        assert np.isclose(
+            horizons_lon, kete_lon, atol=0.5
+        ), f"obs_ecl_lon: Horizons={horizons_lon:.4f}, kete={kete_lon:.4f}, diff={diff:.4f}°"
 
     def test_obs_ecl_lat_matches(self, horizons_eunomia, skyloc_eunomia_geocentric):
         """Horizons and kete observer-centric ecliptic latitude should match."""
@@ -309,9 +335,9 @@ class TestHorizonsKeteCrossValidation:
         kete_lat = skyloc_eunomia_geocentric["obs_ecl_lat"][0]
 
         diff = abs(horizons_lat - kete_lat)
-        assert np.isclose(horizons_lat, kete_lat, atol=0.5), (
-            f"obs_ecl_lat: Horizons={horizons_lat:.4f}, kete={kete_lat:.4f}, diff={diff:.4f}°"
-        )
+        assert np.isclose(
+            horizons_lat, kete_lat, atol=0.5
+        ), f"obs_ecl_lat: Horizons={horizons_lat:.4f}, kete={kete_lat:.4f}, diff={diff:.4f}°"
 
     def test_sky_motion_pa_matches(self, horizons_eunomia, skyloc_eunomia_geocentric):
         """Horizons and kete sky motion PA should match (modulo 360°).
@@ -331,9 +357,9 @@ class TestHorizonsKeteCrossValidation:
         if diff > 180:
             diff = 360 - diff
 
-        assert diff < 0.5, (
-            f"sky_motion_pa: Horizons={horizons_pa:.2f}°, kete={kete_pa:.2f}°, diff={diff:.2f}°"
-        )
+        assert (
+            diff < 0.5
+        ), f"sky_motion_pa: Horizons={horizons_pa:.2f}°, kete={kete_pa:.2f}°, diff={diff:.2f}°"
 
 
 class TestErosPropagation:
@@ -350,10 +376,7 @@ class TestErosPropagation:
 
         # Propagate
         states_out = kete.propagate_n_body(
-            states_in,
-            jd=jd_target,
-            include_asteroids=True,
-            suppress_errors=True
+            states_in, jd=jd_target, include_asteroids=True, suppress_errors=True
         )
 
         eros_state = states_out[0]

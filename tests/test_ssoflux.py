@@ -3,6 +3,7 @@
 Expected values computed directly from the implementation.
 Physics corrected to match Bowell et al. (1989) and JPL Horizons.
 """
+
 import numpy as np
 import pytest
 from skyloc.ssoflux import iau_hg_model, iau_hg_mag, comet_mag
@@ -36,9 +37,9 @@ class TestIAUHGModel:
         ]
         for alpha, expected in test_cases:
             result = iau_hg_model(alpha, gpar=0.15)
-            assert np.isclose(result, expected, rtol=0.001), (
-                f"alpha={alpha}°: got {result:.4f}, expected {expected:.4f}"
-            )
+            assert np.isclose(
+                result, expected, rtol=0.001
+            ), f"alpha={alpha}°: got {result:.4f}, expected {expected:.4f}"
 
     def test_known_values_G040(self):
         """Test against verified values for G=0.40 (S-type asteroid)."""
@@ -51,9 +52,9 @@ class TestIAUHGModel:
         ]
         for alpha, expected in test_cases:
             result = iau_hg_model(alpha, gpar=0.40)
-            assert np.isclose(result, expected, rtol=0.001), (
-                f"G=0.4, alpha={alpha}°: got {result:.4f}, expected {expected:.4f}"
-            )
+            assert np.isclose(
+                result, expected, rtol=0.001
+            ), f"G=0.4, alpha={alpha}°: got {result:.4f}, expected {expected:.4f}"
 
     def test_monotonic_decrease(self):
         """Intensity should decrease monotonically with phase angle."""
@@ -106,9 +107,9 @@ class TestIAUHGMag:
         ]
         for h, alpha, rhel, robs, g, expected in test_cases:
             result = iau_hg_mag(h, alpha, gpar=g, robs=robs, rhel=rhel)
-            assert np.isclose(result, expected, atol=0.02), (
-                f"H={h}, α={alpha}°, r={rhel}: got {result:.2f}, expected {expected:.2f}"
-            )
+            assert np.isclose(
+                result, expected, atol=0.02
+            ), f"H={h}, α={alpha}°, r={rhel}: got {result:.2f}, expected {expected:.2f}"
 
     def test_distance_scaling(self):
         """Magnitude should follow 5*log10(r*delta) distance modulus."""
@@ -149,9 +150,13 @@ class TestIAUHGMag:
         r_eros, delta_eros, alpha_eros = 1.449, 1.577, 37.62
         v_hor_eros = 13.231
 
-        mag_eros = iau_hg_mag(h_eros, alpha_eros, gpar=g_eros, robs=delta_eros, rhel=r_eros)
+        mag_eros = iau_hg_mag(
+            h_eros, alpha_eros, gpar=g_eros, robs=delta_eros, rhel=r_eros
+        )
         # 13.138 vs 13.231 -> 0.093 diff (likely shape mismatch for Eros, but consistent)
-        assert np.isclose(mag_eros, v_hor_eros, atol=0.15), f"Eros mismatch: {mag_eros:.3f} vs {v_hor_eros}"
+        assert np.isclose(
+            mag_eros, v_hor_eros, atol=0.15
+        ), f"Eros mismatch: {mag_eros:.3f} vs {v_hor_eros}"
 
         # --- 15 Eunomia ---
         h_eun, g_eun = 5.43, 0.23
@@ -160,7 +165,9 @@ class TestIAUHGMag:
 
         mag_eun = iau_hg_mag(h_eun, alpha_eun, gpar=g_eun, robs=delta_eun, rhel=r_eun)
         # With fix: 10.450 vs 10.445 -> 0.005 diff!!
-        assert np.isclose(mag_eun, v_hor_eun, atol=0.01), f"Eunomia mismatch: {mag_eun:.3f} vs {v_hor_eun}"
+        assert np.isclose(
+            mag_eun, v_hor_eun, atol=0.01
+        ), f"Eunomia mismatch: {mag_eun:.3f} vs {v_hor_eun}"
 
 
 class TestCometMag:
@@ -174,8 +181,14 @@ class TestCometMag:
     def test_at_1au(self):
         """At 1 AU, T-mag=M1 and N-mag depends on phase."""
         tmag, nmag = comet_mag(
-            m1=5.0, m2=10.0, k1=4.0, k2=10.0, pc=0.03,
-            alpha__deg=0.0, robs=1.0, rhel=1.0
+            m1=5.0,
+            m2=10.0,
+            k1=4.0,
+            k2=10.0,
+            pc=0.03,
+            alpha__deg=0.0,
+            robs=1.0,
+            rhel=1.0,
         )
         # At r=delta=1, log10(r)=log10(delta)=0
         assert np.isclose(tmag, 5.0, atol=0.01)
@@ -200,13 +213,16 @@ class TestCometMag:
 
         # Calculate with our function
         tmag, nmag = comet_mag(
-            m1=m1, m2=m2, k1=k1, k2=k2, pc=pc,
-            alpha__deg=alpha, robs=delta, rhel=r
+            m1=m1, m2=m2, k1=k1, k2=k2, pc=pc, alpha__deg=alpha, robs=delta, rhel=r
         )
 
         # Verify match with Horizons (within 0.01 mag)
-        assert np.isclose(tmag, 25.543, atol=0.01), f"T-mag mismatch: got {tmag:.3f}, expected 25.543"
-        assert np.isclose(nmag, 29.031, atol=0.01), f"N-mag mismatch: got {nmag:.3f}, expected 29.031"
+        assert np.isclose(
+            tmag, 25.543, atol=0.01
+        ), f"T-mag mismatch: got {tmag:.3f}, expected 25.543"
+        assert np.isclose(
+            nmag, 29.031, atol=0.01
+        ), f"N-mag mismatch: got {nmag:.3f}, expected 29.031"
 
     def test_phase_affects_nmag_only(self):
         """Phase angle affects N-mag but not T-mag."""
