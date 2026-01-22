@@ -430,7 +430,13 @@ def horizonsvec2ketestate(
 
 
 def horizons_quick(
-    objid, epochs, depochs=HORIZONS_DEPOCHS, location="500", in_tdb=True, **kwargs
+    objid,
+    epochs,
+    depochs=HORIZONS_DEPOCHS,
+    location="500",
+    in_tdb=True,
+    auto_choose_recordnum=False,
+    **kwargs,
 ):
     """Quick query for the object ID from JPL Horizons to compare with kete.
 
@@ -454,6 +460,12 @@ def horizons_quick(
         If `True`, the input epochs are in TDB. Default is `True`.
         If `False`, the input epochs are in UTC.
 
+    auto_choose_recordnum : bool, optional
+        If `True` and the query returns ambiguous results (e.g., for comets with
+        multiple apparitions), automatically interpret the error message to
+        select the record with the most recent epoch year (or largest Record #
+        if years are identical). Default is `False`.
+
     **kwargs : dict, optional
         Additional keyword arguments to pass to
         `~astroquery.jplhorizons.Horizons.ephemerides`. See
@@ -469,9 +481,61 @@ def horizons_quick(
     for i in range(0, len(epochs), depochs):
         _epochs = epochs[i : i + depochs]
         obj = Horizons(id=objid, location=location, epochs=_epochs)
-        _eph = obj.ephemerides(
-            extra_precision=True, quantities=",".join(map(str, range(1, 49))), **kwargs
-        )
+        try:
+            _eph = obj.ephemerides(
+                extra_precision=True,
+                quantities=",".join(map(str, range(1, 49))),
+                **kwargs,
+            )
+        except ValueError as e:
+            if not auto_choose_recordnum:
+                raise e
+
+            msg = str(e)
+            if "Ambiguous target name" not in msg:
+                raise e
+
+            logger.warning(
+                f"Ambiguous target name for '{objid}'. "
+                "Attempting to resolve by choosing the most recent record..."
+            )
+
+            # Simple parsing of the error message table
+            # The table usually starts after "provide unique id:\n"
+            lines = msg.splitlines()
+            records = []
+            for line in lines:
+                parts = line.split()
+                # Check if the line likely contains data:
+                # Record # (integer), Epoch-yr (integer), etc.
+                # Example: 90000033    1805    2P             2P              Encke
+                if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+                    rec_num = int(parts[0])
+                    epoch_yr = int(parts[1])
+                    records.append((epoch_yr, rec_num, parts[0]))
+
+            if not records:
+                logger.error("Could not parse ambiguous record list from error message.")
+                raise e
+
+            # Sort by Epoch-yr (descending), then Record # (descending)
+            records.sort(key=lambda x: (x[0], x[1]), reverse=True)
+            best_rec = records[0]
+            new_id = best_rec[2]
+
+            logger.info(
+                f"Resolved ambiguity for '{objid}': "
+                f"Selected Record #{new_id} (Epoch-yr {best_rec[0]})"
+            )
+
+            # Retry with new ID
+            obj = Horizons(id=new_id, location=location, epochs=_epochs)
+            _eph = obj.ephemerides(
+                extra_precision=True,
+                quantities=",".join(map(str, range(1, 49))),
+                **kwargs,
+            )
+
         eph.append(_eph)
     eph = vstack(eph)
     colmaps = {
