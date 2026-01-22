@@ -7,7 +7,7 @@ import requests
 import pandas as pd
 import numpy as np
 
-from .configs import SBDB_FIELDS, SBDB_ALLOWED_SBCLASS, IMPACTED, cols2kete_sbdb
+from .configs import SBDB_FIELDS, SBDB_ALLOWED_SBCLASS, IMPACTED, KETE_SBDB2KETECOLS
 
 logger = logging.getLogger(__name__)
 
@@ -454,7 +454,7 @@ class SBDBQuery:
             warn(f"Failed to convert columns {failed_cols} to SBDB_FIELDS types.")
 
         if cols2kete:
-            self.orb = cols2kete_sbdb(self.orb)
+            self.orb = self.orb.rename(columns=KETE_SBDB2KETECOLS)
 
         logger.debug("Final shape after processing: %s", self.orb.shape)
         return self.orb

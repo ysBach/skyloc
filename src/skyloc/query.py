@@ -4,7 +4,7 @@ import logging
 import numpy as np
 import pandas as pd
 
-from .configs import KETE_SBDB2KETECOLS, KETE_SBDB_MINIMUM_FIELDS, cols2kete_sbdb
+from .configs import KETE_SBDB2KETECOLS, KETE_SBDB_MINIMUM_FIELDS
 from .jplsbdb import SBDBQuery, sanitize_sbdb, cols2bools_sbdb
 
 logger = logging.getLogger(__name__)
@@ -268,7 +268,7 @@ def _fetch_orb_sbdb(
             orb, drop_impacted=drop_impacted, drop_unreliable=drop_unreliable
         )
         if cols2kete:
-            orb = cols2kete_sbdb(orb)
+            orb = orb.rename(columns=KETE_SBDB2KETECOLS)
 
         if strict_column_match:
             # If q_new.fields is not equal to orb.columns (DataFrame), except for
