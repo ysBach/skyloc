@@ -610,7 +610,7 @@ def all_world2pix_infov(wcs, *args, naxes=None, bezels=0.5, **kwargs):
     """
     Parameters
     ----------
-    wcs : `~astropy.wcs.WCS`
+    wcs : `~astropy.wcs.WCS` or `FastTanSipWCS`
         The WCS object.
 
     naxes : array-like of int, optional
@@ -619,8 +619,9 @@ def all_world2pix_infov(wcs, *args, naxes=None, bezels=0.5, **kwargs):
         `x` and `y`.
 
     bezels : int or 2-D array-like, optional
-        The number of pixels to drop from each edge of the image. If an int,
-        it is applied to all edges. If 2-D, it should be like ``[[left, right], [bottom, top]]``. Use negative values to accept objects slightly
+        The number of pixels to drop from each edge of the image. If an int, it
+        is applied to all edges. If 2-D, it should be like ``[[left, right],
+        [bottom, top]]``. Use negative values to accept objects slightly
         outside the image. Default is ``0.5``.
 
     Returns
@@ -664,8 +665,9 @@ def infov2d(x, y, bezels=0.5, naxes=None):
         The x and y coordinates of the points.
 
     bezels : int or 2-D array-like, optional
-        The number of pixels to drop from each edge of the image. If an int,
-        it is applied to all edges. If 2-D, it should be like ``[[left, right], [bottom, top]]``. Use negative values to accept objects slightly
+        The number of pixels to drop from each edge of the image. If an int, it
+        is applied to all edges. If 2-D, it should be like ``[[left, right],
+        [bottom, top]]``. Use negative values to accept objects slightly
         outside the image.
         Default is ``0.5`` because python assigns values -0.5 to 0.5 to be the 0-th
         pixel.
