@@ -28,6 +28,7 @@ class FOVCollection:
       - `.fov_jds`: An array of JDs for the FOVs (must be in TDB).
       - `.mask_by_desig(desigs)`: Returns a mask for the FOVs based on the
         designations. Very fast because it uses `set` behind the curtains.
+
           - Use the resulting mask as `fovc[mask]` to get the subset of FOVs in
             ndarray.
           - Use `fovc.fov_desigs[mask]` to get the corresponding designations
@@ -153,8 +154,17 @@ class FOVCollection:
 
         return fovmask
 
-    def save(self, filename):
+    def save(self, filename, overwrite=False):
         """Save the FOVCollection.
+
+        Parameters
+        ----------
+        filename : str or Path
+            Path to save the FOVCollection.
+
+        overwrite : bool, optional
+            If True, overwrite the existing file. If False (default),
+            raises FileExistsError if the file already exists.
 
         Notes
         -----
@@ -162,7 +172,14 @@ class FOVCollection:
         `FOVCollection` can be initiated solely from `FOVList`, it is used to
         be loaded back.
         """
-        self.fovlist.save(filename)
+        filepath = Path(filename)
+        if filepath.exists():
+            if not overwrite:
+                raise FileExistsError(
+                    f"File '{filename}' already exists. Use overwrite=True to replace."
+                )
+            filepath.unlink()
+        self.fovlist.save(str(filename))
 
     @classmethod
     def load(cls, filename):
