@@ -11,6 +11,7 @@ __all__ = ["spkgps", "spkcvo"]
 
 def spkgps(ref: str, obs: int, dummy_lt: bool = True):
     """Return boosted spkgps function.
+
     Parameters
     ----------
     ref : str

@@ -14,6 +14,7 @@ def make_kete_state(
     vel_frame=kete.Frames.Ecliptic,
 ):
     """Convenience function to create a `kete.State` object.
+
     Parameters
     ----------
     state_desig : str

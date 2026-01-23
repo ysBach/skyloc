@@ -42,16 +42,18 @@ def filter_stderr(filter_startswith):
 
     Examples
     --------
-    ```python
-    with filter_stderr(["impact detected", "warning:"]):
-        states0 = kete.propagate_n_body(
-            self.states_from_orb[states_mask],
-            jd=jd0,
-            include_asteroids=include_asteroids,
-            non_gravs=self.non_gravs,
-            suppress_errors=suppress_errors,
-    )
-    ```
+    Examples
+    --------
+    ::
+
+        with filter_stderr(["impact detected", "warning:"]):
+            states0 = kete.propagate_n_body(
+                self.states_from_orb[states_mask],
+                jd=jd0,
+                include_asteroids=include_asteroids,
+                non_gravs=self.non_gravs,
+                suppress_errors=suppress_errors,
+        )
     """
     original_stderr = sys.stderr
     filtered_stderr = FilteredStderr(filter_startswith, original_stderr)

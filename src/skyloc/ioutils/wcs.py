@@ -400,7 +400,8 @@ class FastTanSipWCS:
         self.parallel_threshold = parallel_threshold
 
     def all_pix2world(self, x, y, origin):
-        """ Convert pixel coordinates to world coordinates.
+        """Convert pixel coordinates to world coordinates.
+
         Parameters
         ----------
         x, y : array-like
