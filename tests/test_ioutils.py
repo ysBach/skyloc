@@ -274,3 +274,358 @@ def test_to_astropy(user_header):
                 assert np.isclose(h_new[key], h_ref[key]), f"{key} mismatch"
             else:
                 assert h_new[key] == h_ref[key], f"{key} mismatch"
+
+
+class TestAllWorld2PixInfOV:
+    """Tests for all_world2pix_infov function."""
+
+    def test_basic_in_fov(self, user_header):
+        """Points near CRVAL should be in FOV."""
+        from skyloc.ioutils import all_world2pix_infov
+
+        w = WCS(user_header)
+        # Point at reference position (CRVAL)
+        ra = np.array([user_header["CRVAL1"]])
+        dec = np.array([user_header["CRVAL2"]])
+
+        # Use large naxes to ensure point is within
+        pixels, infov = all_world2pix_infov(w, ra, dec, 0, naxes=[2048, 2048])
+
+        assert len(pixels) == 1
+        assert pixels.shape == (1, 2)
+        assert infov[0] is True or infov[0] == True  # Near CRPIX should be in FOV
+
+    def test_out_of_fov(self, user_header):
+        """Points outside image bounds should be out of FOV."""
+        from skyloc.ioutils import all_world2pix_infov
+
+        w = WCS(user_header)
+        # Point slightly offset from CRVAL - will project to valid pixel but outside small naxes
+        # CRVAL is at ~(125.95, 23.12), shift slightly
+        ra = np.array([user_header["CRVAL1"] + 1.0])  # ~1 deg offset
+        dec = np.array([user_header["CRVAL2"] + 1.0])
+
+        # Use very small naxes so the offset point is definitely out
+        pixels, infov = all_world2pix_infov(w, ra, dec, 0, naxes=[10, 10])
+
+        assert len(infov) == 1
+        assert infov[0] == False
+
+    def test_custom_bezels(self, user_header):
+        """Test with custom bezels parameter."""
+        from skyloc.ioutils import all_world2pix_infov
+
+        w = WCS(user_header)
+        ra = np.array([user_header["CRVAL1"]])
+        dec = np.array([user_header["CRVAL2"]])
+
+        # Symmetric bezels
+        pixels, infov = all_world2pix_infov(
+            w, ra, dec, 0, naxes=[2048, 2048], bezels=10
+        )
+        assert len(infov) == 1
+
+        # Asymmetric bezels
+        pixels, infov = all_world2pix_infov(
+            w, ra, dec, 0, naxes=[2048, 2048], bezels=[[5, 5], [10, 10]]
+        )
+        assert len(infov) == 1
+
+    def test_with_fast_wcs(self, user_header):
+        """Test that FastTanSipWCS works with all_world2pix_infov."""
+        from skyloc.ioutils import all_world2pix_infov
+
+        h_dict = dict(user_header)
+        w_fast = FastTanSipWCS(h_dict)
+
+        ra = np.array([user_header["CRVAL1"]])
+        dec = np.array([user_header["CRVAL2"]])
+
+        pixels, infov = all_world2pix_infov(w_fast, ra, dec, 0, naxes=[2048, 2048])
+
+        assert len(pixels) == 1
+        assert infov[0] == True
+
+    def test_multiple_points(self, user_header):
+        """Test with multiple points, some in and some out of FOV."""
+        from skyloc.ioutils import all_world2pix_infov
+
+        w = WCS(user_header)
+
+        # Mix of points: one at CRVAL (in FOV), one offset (out of small FOV)
+        ra = np.array([user_header["CRVAL1"], user_header["CRVAL1"] + 2.0])
+        dec = np.array([user_header["CRVAL2"], user_header["CRVAL2"] + 2.0])
+
+        # Use naxes centered on CRPIX=(97.5, 349.5) - first point at CRPIX, second far off
+        pixels, infov = all_world2pix_infov(w, ra, dec, 0, naxes=[200, 700])
+
+        assert len(infov) == 2
+        # First point at CRVAL projects to CRPIX which is in [200, 700], second is offset
+        assert infov[0] == True
+        assert infov[1] == False
+
+
+class TestCompactEphemParqCols:
+    """Tests for compact_ephem_parq_cols function."""
+
+    def test_basic_factor_scaling(self):
+        """Test that columns are scaled by factor correctly."""
+        from skyloc.ioutils.ephemeris import compact_ephem_parq_cols, EPH_DTYPES_BASE
+
+        # Create sample DataFrame
+        eph = pd.DataFrame(
+            {
+                "alpha": [45.0, 90.0, 135.0],
+                "r_hel": [1.0, 2.5, 5.0],
+                "vmag": [10.0, 15.5, 20.0],
+                "other_col": [1, 2, 3],  # Should be unchanged
+            }
+        )
+
+        result = compact_ephem_parq_cols(eph, EPH_DTYPES_BASE)
+
+        # Check that scaled columns exist
+        assert "alpha*360" in result.columns
+        assert "r_hel*1000" in result.columns
+        assert "vmag*2000" in result.columns
+
+        # Check that original columns are dropped
+        assert "alpha" not in result.columns
+        assert "r_hel" not in result.columns
+        assert "vmag" not in result.columns
+
+        # Other columns should remain
+        assert "other_col" in result.columns
+
+        # Verify scaling (alpha * 360)
+        np.testing.assert_array_almost_equal(
+            result["alpha*360"].values.astype("float64"),
+            [45.0 * 360, 90.0 * 360, 135.0 * 360],
+        )
+
+    def test_nan_handling(self):
+        """Test that NaN values are replaced with navalue."""
+        from skyloc.ioutils.ephemeris import compact_ephem_parq_cols, EPH_DTYPES_BASE
+
+        eph = pd.DataFrame({"alpha": [45.0, np.nan, 90.0]})
+
+        result = compact_ephem_parq_cols(eph, EPH_DTYPES_BASE)
+
+        # NaN should be replaced with navalue (65535 for alpha)
+        assert result["alpha*360"].iloc[1] == 65535
+
+    def test_healpix_encoding(self):
+        """Test HEALPix coordinate encoding."""
+        from skyloc.ioutils.ephemeris import compact_ephem_parq_cols, EPH_DTYPES_BASE
+
+        # Create DataFrame with coordinate columns
+        eph = pd.DataFrame(
+            {
+                "ra": [180.0, 90.0, 270.0],
+                "dec": [0.0, 45.0, -30.0],
+            }
+        )
+
+        # Use smaller nside for testing (2^8)
+        result = compact_ephem_parq_cols(eph, EPH_DTYPES_BASE, nside=2**8)
+
+        # HEALPix column should exist
+        hp_col = "eqj2000_hpidx_ring_2^8"
+        assert hp_col in result.columns
+
+        # Original columns should be dropped
+        assert "ra" not in result.columns
+        assert "dec" not in result.columns
+
+        # HEALPix values should be valid uint64
+        assert result[hp_col].dtype == np.uint64
+
+    def test_drop_cols(self):
+        """Test that drop_cols parameter works."""
+        from skyloc.ioutils.ephemeris import compact_ephem_parq_cols, EPH_DTYPES_BASE
+
+        eph = pd.DataFrame(
+            {
+                "alpha": [45.0],
+                "to_drop": [100],
+                "keep_me": [200],
+            }
+        )
+
+        result = compact_ephem_parq_cols(eph, EPH_DTYPES_BASE, drop_cols=["to_drop"])
+
+        assert "to_drop" not in result.columns
+        assert "keep_me" in result.columns
+
+    def test_custom_scheme(self):
+        """Test nested HEALPix scheme."""
+        from skyloc.ioutils.ephemeris import compact_ephem_parq_cols, EPH_DTYPES_BASE
+
+        eph = pd.DataFrame({"ra": [180.0], "dec": [0.0]})
+
+        result = compact_ephem_parq_cols(
+            eph, EPH_DTYPES_BASE, nside=2**8, scheme="nested"
+        )
+
+        # Check for nested scheme in column name
+        assert "eqj2000_hpidx_nested_2^8" in result.columns
+
+
+class TestLoadCompactParqEphem:
+    """Tests for load_compact_parq_ephem function."""
+
+    def test_round_trip(self, tmp_path):
+        """Test compact then load recovers original values within precision."""
+        from skyloc.ioutils.ephemeris import (
+            compact_ephem_parq_cols,
+            load_compact_parq_ephem,
+            EPH_DTYPES_BASE,
+        )
+
+        # Create sample DataFrame
+        original = pd.DataFrame(
+            {
+                "alpha": [45.123, 90.456, 135.789],
+                "r_hel": [1.234, 2.567, 5.890],
+                "vmag": [10.001, 15.502, 20.003],
+                "ra": [180.0, 90.0, 270.0],
+                "dec": [0.0, 45.0, -30.0],
+            }
+        )
+
+        # Compact
+        compacted = compact_ephem_parq_cols(original, EPH_DTYPES_BASE, nside=2**16)
+
+        # Save to parquet
+        fpath = tmp_path / "test_eph.parquet"
+        compacted.to_parquet(fpath)
+
+        # Load back
+        loaded = load_compact_parq_ephem(fpath, EPH_DTYPES_BASE)
+
+        # Check that original columns are restored
+        assert "alpha" in loaded.columns
+        assert "r_hel" in loaded.columns
+        assert "vmag" in loaded.columns
+        assert "ra" in loaded.columns
+        assert "dec" in loaded.columns
+
+        # Check values within precision (alpha: factor=360, so ~0.003 deg precision)
+        np.testing.assert_array_almost_equal(
+            loaded["alpha"].values, original["alpha"].values, decimal=2
+        )
+        np.testing.assert_array_almost_equal(
+            loaded["r_hel"].values, original["r_hel"].values, decimal=2
+        )
+        np.testing.assert_array_almost_equal(
+            loaded["vmag"].values, original["vmag"].values, decimal=3
+        )
+
+        # Coordinates (HEALPix precision depends on nside)
+        np.testing.assert_array_almost_equal(
+            loaded["ra"].values, original["ra"].values, decimal=1
+        )
+        np.testing.assert_array_almost_equal(
+            loaded["dec"].values, original["dec"].values, decimal=1
+        )
+
+    def test_filter_on_factored_column(self, tmp_path):
+        """Test filtering on factored columns uses original values."""
+        from skyloc.ioutils.ephemeris import (
+            compact_ephem_parq_cols,
+            load_compact_parq_ephem,
+            EPH_DTYPES_BASE,
+        )
+
+        original = pd.DataFrame(
+            {
+                "alpha": [30.0, 60.0, 90.0, 120.0, 150.0],
+            }
+        )
+
+        compacted = compact_ephem_parq_cols(original, EPH_DTYPES_BASE)
+        fpath = tmp_path / "test_filter.parquet"
+        compacted.to_parquet(fpath)
+
+        # Filter using original column name and value
+        loaded = load_compact_parq_ephem(
+            fpath, EPH_DTYPES_BASE, filters=[("alpha", ">", 100)]
+        )
+
+        # Should only get rows with alpha > 100
+        assert len(loaded) == 2
+        assert all(loaded["alpha"] > 100 - 1)  # Allow small precision error
+
+    def test_filter_dnf_format(self, tmp_path):
+        """Test DNF format filters (OR between groups)."""
+        from skyloc.ioutils.ephemeris import (
+            compact_ephem_parq_cols,
+            load_compact_parq_ephem,
+            EPH_DTYPES_BASE,
+        )
+
+        original = pd.DataFrame(
+            {
+                "alpha": [30.0, 60.0, 90.0, 120.0, 150.0],
+                "vmag": [5.0, 10.0, 15.0, 20.0, 25.0],
+            }
+        )
+
+        compacted = compact_ephem_parq_cols(original, EPH_DTYPES_BASE)
+        fpath = tmp_path / "test_dnf.parquet"
+        compacted.to_parquet(fpath)
+
+        # DNF: (alpha < 50) OR (vmag > 20)
+        loaded = load_compact_parq_ephem(
+            fpath, EPH_DTYPES_BASE, filters=[[("alpha", "<", 50)], [("vmag", ">", 20)]]
+        )
+
+        # Should get rows with alpha=30 and vmag=25
+        assert len(loaded) == 2
+
+    def test_columns_selection(self, tmp_path):
+        """Test loading only specific columns."""
+        from skyloc.ioutils.ephemeris import (
+            compact_ephem_parq_cols,
+            load_compact_parq_ephem,
+            EPH_DTYPES_BASE,
+        )
+
+        original = pd.DataFrame(
+            {
+                "alpha": [45.0, 90.0],
+                "r_hel": [1.0, 2.0],
+                "vmag": [10.0, 15.0],
+            }
+        )
+
+        compacted = compact_ephem_parq_cols(original, EPH_DTYPES_BASE)
+        fpath = tmp_path / "test_cols.parquet"
+        compacted.to_parquet(fpath)
+
+        # Load only alpha
+        loaded = load_compact_parq_ephem(fpath, EPH_DTYPES_BASE, columns=["alpha"])
+
+        assert "alpha" in loaded.columns
+        assert "r_hel" not in loaded.columns
+        assert "vmag" not in loaded.columns
+
+    def test_coordinate_filter_raises(self, tmp_path):
+        """Test that filtering on coordinate columns raises ValueError."""
+        from skyloc.ioutils.ephemeris import (
+            compact_ephem_parq_cols,
+            load_compact_parq_ephem,
+            EPH_DTYPES_BASE,
+        )
+
+        original = pd.DataFrame({"ra": [180.0], "dec": [0.0]})
+        compacted = compact_ephem_parq_cols(original, EPH_DTYPES_BASE, nside=2**8)
+        fpath = tmp_path / "test_coord_filter.parquet"
+        compacted.to_parquet(fpath)
+
+        with pytest.raises(ValueError, match="Filtering on coordinate column"):
+            load_compact_parq_ephem(fpath, EPH_DTYPES_BASE, filters=[("ra", ">", 100)])
+
+
+# Import pandas for ephemeris tests
+import pandas as pd
