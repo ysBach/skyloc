@@ -303,7 +303,8 @@ def calc_geometries(
     Returns
     -------
     geoms : dict
-        The geometries of the objects, including the following
+        The geometries of the objects, including the following:
+
         - alpha : np.ndarray
             The phase angles in degrees.
         - r_hel, r_obs : np.ndarray

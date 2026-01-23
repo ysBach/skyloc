@@ -98,8 +98,6 @@ def _iau_hg_model(alpha, gpar):
     #     phi1[i] = w * phi1_s + (1.0 - w) * phi1_l
     #     phi2[i] = w * phi2_s + (1.0 - w) * phi2_l
 
-    # intensity = gpar * phi1 + (1.0 - gpar) * phi2  <-- OLD BUGGY
-    # Correct formula: (1 - G) * Phi1 + G * Phi2
     intensity = (1.0 - gpar) * phi1 + gpar * phi2
     return intensity
 
@@ -126,6 +124,37 @@ def iau_hg_mag(hmag, alpha__deg, gpar=0.15, robs=1, rhel=1):
     -------
     mag : ndarray
         The apparent magnitude of the object at the given phase angle.
+
+    Notes
+    -----
+    Semi-empirical model of the phase function of the Moon, asteroids, and
+    other (airless) solar system objects. The phase function defined at
+    $(0^\circ \le \alpha \le 120^\circ)$ for the phase angle $\alpha$. It
+    is given by the following equation:
+
+    .. math::
+        \Phi_\mathrm{HG}(\alpha, G) = (1-G) \Phi_{HG1}(\alpha) + G \Phi_{HG2}(\alpha)
+
+    where
+
+    .. math::
+        \Phi_{HG i}(\alpha) = W \left ( 1-\frac{C_i \sin \alpha}{0.119+1.341 \sin \alpha-0.754 \sin ^2 \alpha} \right )
+        + (1 - W) \times \exp \left \{ -A_i \left [ \tan \frac{\alpha}{2} \right ]^{B_i} \right \}
+
+    and
+
+    .. math::
+        W(\alpha) = \exp \left \{ -90.56 \tan^2 \frac{\alpha}{2} \right \}
+
+    The parameters $A_i$, $B_i$, and $C_i$ are given by:
+
+    .. math::
+        A_1, A_2 &= 3.332, 1.862 \sep
+        B_1, B_2 = 0.631, 1.218 \sep
+        C_1, C_2 = 0.986, 0.238
+
+    Reference: Bowell et al. 1989
+    https://ui.adsabs.harvard.edu/abs/1989aste.conf..524B/abstract
     """
     return _iau_hg_mag(
         np.asarray(hmag, dtype=np.float64),
@@ -185,9 +214,11 @@ def comet_mag(m1, m2, k1, k2, pc, alpha__deg, robs=1.0, rhel=1.0):
 
     Notes
     -----
-    https://ssd.jpl.nasa.gov/horizons/manual.html#obsquan
-    T-mag=M1 + 5*log10(delta) + k1*log10(r)
-    N-mag=M2 + 5*log10(delta) + k2*log10(r) + pc*alpha
+    Comet mags are calculaed as
+    https://ssd.jpl.nasa.gov/horizons/manual.html#obsquan ::
+
+        T-mag=M1 + 5*log10(delta) + k1*log10(r)
+        N-mag=M2 + 5*log10(delta) + k2*log10(r) + pc*alpha
     """
     return _comet_mag(
         np.asarray(m1, dtype=np.float64),

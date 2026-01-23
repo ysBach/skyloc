@@ -11,25 +11,25 @@ def str2char_p(spkid):
     -----
     Original code from spiceypy::
 
-    def string_to_char_p(inobject, inlen=None):
-        """
-        convert a python string to a char_p
+        def string_to_char_p(inobject, inlen=None):
+            """
+            convert a python string to a char_p
 
-        :param inobject: input string, int for getting null string of length of int
-        :param inlen: optional parameter, length of a given string can be specified
-        :return:
-        """
-        if inlen and isinstance(inobject, str):
-            return create_string_buffer(inobject.encode(encoding="UTF-8"), inlen)
-        if isinstance(inobject, bytes):
-            return inobject
-        if isinstance(inobject, c_int):
-            return string_to_char_p(" " * inobject.value)
-        if isinstance(inobject, int):
-            return string_to_char_p(" " * inobject)
-        if isinstance(inobject, numpy.str_):
-            return c_char_p(inobject.encode(encoding="utf-8"))
-        return c_char_p(inobject.encode(encoding="UTF-8"))
+            :param inobject: input string, int for getting null string of length of int
+            :param inlen: optional parameter, length of a given string can be specified
+            :return:
+            """
+            if inlen and isinstance(inobject, str):
+                return create_string_buffer(inobject.encode(encoding="UTF-8"), inlen)
+            if isinstance(inobject, bytes):
+                return inobject
+            if isinstance(inobject, c_int):
+                return string_to_char_p(" " * inobject.value)
+            if isinstance(inobject, int):
+                return string_to_char_p(" " * inobject)
+            if isinstance(inobject, numpy.str_):
+                return c_char_p(inobject.encode(encoding="utf-8"))
+            return c_char_p(inobject.encode(encoding="UTF-8"))
     '''
     return ctypes.c_char_p(str(spkid).encode(encoding="UTF-8"))
     # _str = str(spkid)
@@ -43,10 +43,10 @@ def empty_double_vector(n):
     -----
     Original code from spiceypy::
 
-    def empty_double_vector(n):
-        if isinstance(n, c_int):
-            n = n.value
-        assert isinstance(n, int)
-        return (c_double * n)()
+        def empty_double_vector(n):
+            if isinstance(n, c_int):
+                n = n.value
+            assert isinstance(n, int)
+            return (c_double * n)()
     """
     return (ctypes.c_double * n)()
