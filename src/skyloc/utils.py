@@ -21,24 +21,93 @@ __all__ = [
 ]
 
 
-def au2km(x):
-    """Convert AU to km."""
-    return x * 1.49597870700e8
+# Conversion constants
+# IAU 2012 exact definition: 1 AU = 149597870.700 km
+AU_KM_IAU2012 = 1.49597870700e8  # km
+# SPICE/NAIF DE-405 era value: 1 AU = 149597870.691 km
+AU_KM_SPICE = 1.49597870691e8  # km
+# Seconds per day (exact)
+DAY_S = 86400.0
 
 
-def km2au(x):
-    """Convert km to AU."""
-    return x / 1.49597870700e8
+def au2km(x, use_spice=False):
+    """Convert AU to km.
+
+    Parameters
+    ----------
+    x : float or array-like
+        Distance in AU.
+    use_spice : bool, optional
+        If True, use SPICE/NAIF DE-405 AU value (149597870.691 km).
+        If False (default), use IAU 2012 exact value (149597870.700 km).
+
+    Returns
+    -------
+    float or array-like
+        Distance in km.
+    """
+    au_km = AU_KM_SPICE if use_spice else AU_KM_IAU2012
+    return x * au_km
 
 
-def kmps2aupd(x):
-    """Convert km/s to AU/day."""
-    return x * 0.00057754833
+def km2au(x, use_spice=False):
+    """Convert km to AU.
+
+    Parameters
+    ----------
+    x : float or array-like
+        Distance in km.
+    use_spice : bool, optional
+        If True, use SPICE/NAIF DE-405 AU value (149597870.691 km).
+        If False (default), use IAU 2012 exact value (149597870.700 km).
+
+    Returns
+    -------
+    float or array-like
+        Distance in AU.
+    """
+    au_km = AU_KM_SPICE if use_spice else AU_KM_IAU2012
+    return x / au_km
 
 
-def aupd2kmps(x):
-    """Convert AU/day to km/s."""
-    return x * 1731.4568
+def kmps2aupd(x, use_spice=False):
+    """Convert km/s to AU/day.
+
+    Parameters
+    ----------
+    x : float or array-like
+        Velocity in km/s.
+    use_spice : bool, optional
+        If True, use SPICE/NAIF DE-405 AU value (149597870.691 km).
+        If False (default), use IAU 2012 exact value (149597870.700 km).
+
+    Returns
+    -------
+    float or array-like
+        Velocity in AU/day.
+    """
+    au_km = AU_KM_SPICE if use_spice else AU_KM_IAU2012
+    return x * DAY_S / au_km
+
+
+def aupd2kmps(x, use_spice=False):
+    """Convert AU/day to km/s.
+
+    Parameters
+    ----------
+    x : float or array-like
+        Velocity in AU/day.
+    use_spice : bool, optional
+        If True, use SPICE/NAIF DE-405 AU value (149597870.691 km).
+        If False (default), use IAU 2012 exact value (149597870.700 km).
+
+    Returns
+    -------
+    float or array-like
+        Velocity in km/s.
+    """
+    au_km = AU_KM_SPICE if use_spice else AU_KM_IAU2012
+    return x * au_km / DAY_S
 
 
 def tdb2utc(tdb, format="jd"):
