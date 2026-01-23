@@ -15,24 +15,13 @@ from .keteutils import (
     map_spice_name_to_desig,
     KETE_ASTEROIDS_PHYSICS,
 )
+from .ioutils.ephemeris import compact_ephem_parq_cols, EPH_DTYPES_BASE
 from .ssoflux import comet_mag, iau_hg_mag
 from .utils import listmask, tdb2utc
 
 logger = logging.getLogger(__name__)
 
 __all__ = ["locator_twice", "SSOLocator", "SpiceLocator", "StarLocator", "calc_ephems"]
-
-_EPH_DTYPES = {
-    "alpha": np.float32,
-    "vmag": np.float32,
-    "r_obs": np.float32,
-    "r_hel": np.float32,
-    "dra*cosdec/dt": np.float32,
-    "ddec/dt": np.float32,
-    "sky_motion": np.float32,
-    "sky_motion_pa": np.float32,
-    "obsindex": np.uint32,
-}
 
 
 def locator_twice(
@@ -327,7 +316,7 @@ class SpiceLocator(Locator):
     def calc_ephems(
         self,
         sort_by=["vmag"],
-        dtypes=_EPH_DTYPES,
+        compact=True,
         add_obsid=True,
         drop_obsindex=True,
         add_jds=True,
@@ -341,8 +330,12 @@ class SpiceLocator(Locator):
         sort_by : list, optional
             Columns to sort by. Default is ``["vmag"]``.
 
-        dtypes : dict, optional
-            Data types for output columns. Default is `_EPH_DTYPES`.
+        compact : bool, optional
+            If `True`, apply advanced compression using
+            `~skyloc.ioutils.ephemeris.compact_ephem_parq_cols` before saving.
+            The saved file can be loaded with
+            `~skyloc.ioutils.ephemeris.load_compact_parq_ephem`.
+            Default is `True`.
 
         add_obsid : bool, optional
             If `True`, add "obsid" column. Default is `True`.
@@ -413,11 +406,6 @@ class SpiceLocator(Locator):
         if sort_by is not None:
             dfs = dfs.sort_values(["obsindex"] + sort_by).reset_index(drop=True)
 
-        if dtypes is not None:
-            for c, d in dtypes.items():
-                if c in dfs.columns:
-                    dfs[c] = dfs[c].astype(d)
-
         if add_obsid:
             obsindex_arr = np.array(obsids)
             dfs["obsid"] = obsindex_arr[dfs["obsindex"].values]
@@ -428,7 +416,11 @@ class SpiceLocator(Locator):
         if output is not None:
             output = Path(output)
             if overwrite or not output.exists():
-                dfs.to_parquet(output)
+                if compact:
+                    dfs_to_save = compact_ephem_parq_cols(dfs, dtypes=EPH_DTYPES_BASE)
+                else:
+                    dfs_to_save = dfs
+                dfs_to_save.to_parquet(output)
                 logger.debug("Saved SPICE ephemeris to %s", output)
 
         self.eph = dfs
@@ -916,7 +908,7 @@ class SSOLocator(Locator):
         self,
         gpar_default=0.15,
         sort_by=["vmag"],
-        dtypes=_EPH_DTYPES,
+        compact=True,
         add_obsid=True,
         drop_obsindex=True,
         add_jds=True,
@@ -944,7 +936,7 @@ class SSOLocator(Locator):
                 gpar_default=gpar_default,
                 sort_by=sort_by,
                 add_jds=add_jds,
-                dtypes=dtypes,
+                compact=compact,
                 output=output,
                 overwrite=overwrite,
             )
@@ -986,6 +978,7 @@ def _calc_ephem(
     orb, simulstates, gpar_default=0.15, rates_in_arcsec_per_min=True, sort_by=None
 ):
     """Calculate the ephemerides for the objects in the FOVs.
+
     Parameters
     ----------
     orb : `~pandas.DataFrame`
@@ -1090,7 +1083,7 @@ def calc_ephems(
     rates_in_arcsec_per_min=True,
     add_jds=False,
     sort_by=["vmag"],
-    dtypes=_EPH_DTYPES,
+    compact=True,
     output="eph.parq",
     overwrite=False,
     **kwargs,
@@ -1125,8 +1118,14 @@ def calc_ephems(
     sort_by : list, optional
         List of columns to sort the output DataFrame by. Default is ``["vmag"]``.
 
-    dtypes : dict, optional
-        Data types for the output DataFrame. Default is `_EPH_DTYPES`.
+    compact : bool, optional
+        If `True`, apply advanced compression to the output DataFrame using
+        `~skyloc.ioutils.ephemeris.compact_ephem_parq_cols` (integer scaling +
+        HEALPix coordinate encoding) before saving. This significantly reduces
+        file size at the cost of precision (typically sub-arcsecond for
+        coordinates, <1 mmag for vmag). The saved file can be loaded with
+        `~skyloc.ioutils.ephemeris.load_compact_parq_ephem`.
+        Default is `True`.
 
     output : str or `~pathlib.Path`, optional
         Path to the output file where the ephemerides will be saved in
@@ -1225,15 +1224,14 @@ def calc_ephems(
     if sort_by is not None:
         dfs = dfs.sort_values(["obsindex"] + sort_by).reset_index(drop=True)
 
-    if dtypes is not None:
-        for c, d in dtypes.items():
-            dfs[c] = dfs[c].astype(d)
-
     if output is not None:
         output = Path(output)
         if overwrite or not output.exists():
-            dfs.to_parquet(output, **kwargs)
+            if compact:
+                dfs_to_save = compact_ephem_parq_cols(dfs, dtypes=EPH_DTYPES_BASE)
+            else:
+                dfs_to_save = dfs
+            dfs_to_save.to_parquet(output, **kwargs)
             logger.debug("Saved ephemeris to %s", output)
 
-    # return dfs
     return dfs, obsids
