@@ -48,8 +48,8 @@ def iau_hg_model(alpha, gpar=0.15):
     The parameters $A_i$, $B_i$, and $C_i$ are given by:
 
     .. math::
-        A_1, A_2 &= 3.332, 1.862 \sep
-        B_1, B_2 = 0.631, 1.218 \sep
+        A_1, A_2 = 3.332, 1.862 \quad;\quad
+        B_1, B_2 = 0.631, 1.218 \quad;\quad
         C_1, C_2 = 0.986, 0.238
 
     Reference: Bowell et al. 1989
@@ -103,7 +103,7 @@ def _iau_hg_model(alpha, gpar):
 
 
 def iau_hg_mag(hmag, alpha__deg, gpar=0.15, robs=1, rhel=1):
-    """The IAU HG phase function model in magnitudes scale.
+    r"""The IAU HG phase function model in magnitudes scale.
 
     Parameters
     ----------
@@ -149,8 +149,8 @@ def iau_hg_mag(hmag, alpha__deg, gpar=0.15, robs=1, rhel=1):
     The parameters $A_i$, $B_i$, and $C_i$ are given by:
 
     .. math::
-        A_1, A_2 &= 3.332, 1.862 \sep
-        B_1, B_2 = 0.631, 1.218 \sep
+        A_1, A_2 = 3.332, 1.862 \quad;\quad
+        B_1, B_2 = 0.631, 1.218 \quad;\quad
         C_1, C_2 = 0.986, 0.238
 
     Reference: Bowell et al. 1989

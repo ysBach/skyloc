@@ -44,10 +44,11 @@ def sbdb_single2orb(
     """This is a wrapper for `astroquery.jplsbdb.SBDB.query` method.
     See the `astroquery.jplsbdb.SBDB.query` method for details.
 
-    This function uses a few fixed args for that :
-    - `full_precision=True`
-    - `phys=True`
-    - `covariance="mat"`
+    This function uses a few fixed args for that:
+
+        - `full_precision=True`
+        - `phys=True`
+        - `covariance="mat"`
 
     Parameters
     ----------
@@ -149,9 +150,110 @@ def _query_cached(base_url, params_tuple):
 
 class SBDBQuery:
     """Class to handle SBDB queries.
+
+    Notes
+    -----
     It is based on SBDB Query API Version 1.0 (Aug 2021), which is the most
     recent version as of 2024 Sept.
-    TODO: When this class gets mature enough, consider adding it to astroquery.
+
+    This will get matured/generated in the future similar to
+    `astroquery.jplsbdb`. This is at a primitive stage to query all information
+    specifically for "all objects".
+
+    Parameters
+    ----------
+    info : {"count", "field", "all"}, optional
+        When ``"count"`` is selected, return the number of objects available in
+        the SBDB. When ``"field"`` is selected, return all available output
+        fields. If ``"all"`` is selected, output count and field results. See
+        mode ``I`` section in the link below for details.
+        https://ssd-api.jpl.nasa.gov/doc/sbdb_query.html
+        If provided, mode ``I`` will be used, and all other parameters except
+        `sp_defs` will completely be ignored.
+        Default is `None`.
+
+    fields : str (comma-separated) or list of str, optional
+        List of fields to be output. If no fields are specified, only the count
+        (number of records matching found) is output. Field names are
+        **case-sensitive**.
+
+        Some convenient options from ``SBDB_FIELDS`` are available:
+
+            * `"*"`: Literally all fields
+            * `"all"`: `"*"` without the `ignore` columns.
+            *  `"ignore"`: Columns that are extremely unlikely to be used in practice.
+            *  `"simple"`: Columns that are most likely to be used in practice.
+            *  `"lite"`: num(columns) between "all" and "simple"...
+            *  `″simple_ast"`: `"simple"` without the comet-related columns.
+            *  `″simple_com"`: `"simple"` without the asteroid-related columns.
+            *  `"lite_ast"`: `"lite"` without the comet-related columns.
+            *  `"lite_com"`: `"lite"` without the asteroid-related columns.
+            *  `"all_ast"`: `"all"` without the comet-related columns.
+            *  `"all_com"`: `"all"` without the asteroid-related columns.
+
+        Default is ``"pdes"``.
+
+    sort : str, optional
+        Sort results by the specified field(s). Up to three fields can be
+        specified, separated by commas (``,``) and descending direction can be
+        specified by prefixing the field name with minus (``-``) (ascending is
+        the default).
+
+    limit : int, optional
+        Limit data to the first `limit` results (where `limit` is the specified
+        number and must be an integer value greater than zero). Default is
+        `100`, so if you want all results, set `limit` to
+        `None`.
+
+    limit_from : int, optional
+        Limit data starting from the specified record (where zero is the first
+        record). Useful for “paging” through large datasets. Requires `limit`.
+        **CAUTION**: it is possible for the underlying database to change
+        between API calls.
+
+    full_prec : bool, int optional
+        Output data in full precision (normally, data are returned in
+        reduced precision for display purposes). Default is `False`.
+
+    sb_ns : str, optional
+        Numbered status: restrict query results to either numbered
+        (``"n"``) or unnumbered (``"u"``) small-bodies.
+
+    sb_kind : str, optional
+        Limit results to either asteroids-only (``"a"``) or comets-only
+        (``"c"``).
+
+    sb_group : str, optional
+        Limit results to NEOs-only (``"neo"``) or PHAs-only (``"pha"``).
+
+    sb_class : str (comma-separated) or list of str, optional
+        Limit results to small-bodies with orbits of the specified class (or
+        classes). Allowable values are valid 3-character orbit-class codes (see
+        section below on orbit classes). If specifying more than one class,
+        separate entities with a comma (e.g., ``"TJN,CEN"``) or provide a list
+        of str (e.g., ``["TJN", "CEN"]``). **Codes are case-sensitive.**
+        See "Available SBDB Orbit Classes" section at the link for details:
+        https://ssd-api.jpl.nasa.gov/doc/sbdb_filter.html
+
+    sb_sat : bool, optional
+        Limit results to small-bodies with at least one known satellite.
+
+    sb_xfrag : bool, optional
+        Exclude all comet fragments (if any) from results.
+
+    sb_defs : {"class", "field", "all"}, optional
+        Return SBDB definitions and data related to available filter
+        constraints. These data are typically only useful in supporting webpage
+        apps. See "mode ``I``" section in the link for details.
+        https://ssd-api.jpl.nasa.gov/doc/sbdb_filter.html
+        If provided, mode ``I`` will be used, and all other parameters
+        except `info` will completely be ignored.
+
+    sb_cdata : str, optional
+        Custom field constraints (``"sb-cdata"`` field). Maximum length is 2048
+        characters when converted to the URI encoded string. See this link for
+        details:
+        https://ssd-api.jpl.nasa.gov/doc/sbdb_filter.html#constraints
     """
 
     def __init__(
@@ -171,115 +273,6 @@ class SBDBQuery:
         sb_defs=None,
         sb_cdata=None,
     ):
-        """Get SBDB query URL for small bodies.
-
-        Parameters
-        ----------
-        info : {"count", "field", "all"}, optional
-            When ``"count"`` is selected, return the number of objects
-            available in the SBDB. When ``"field"`` is selected, return all
-            available output fields. If ``"all"`` is selected, output count and
-            field results. See mode ``I`` section in the link below for
-            details.
-            https://ssd-api.jpl.nasa.gov/doc/sbdb_query.html
-            If provided, mode ``I`` will be used, and all other parameters
-            except `sp_defs` will completely be ignored.
-            Default is `None`.
-
-        fields : str (comma-separated) or list of str, optional
-            List of fields to be output. If no fields are specified, only the
-            count (number of records matching found) is output. Field names are
-            **case-sensitive**.
-
-            Some convenient options from ``SBDB_FIELDS`` are available ::
-
-              * `"*"`: Literally all fields
-              * `"all"`: `"*"` without the `ignore` columns.
-              *  `"ignore"`: Columns that are extremely unlikely to be used in
-                 practice.
-              *  `"simple"`: Columns that are most likely to be used in
-                 practice.
-              *  `"lite"`: num(columns) between "all" and "simple"...
-              *  `″simple_ast"`: `"simple"` without the comet-related columns.
-              *  `″simple_com"`: `"simple"` without the asteroid-related
-                 columns.
-              *  `"lite_ast"`: `"lite"` without the comet-related columns.
-              *  `"lite_com"`: `"lite"` without the asteroid-related columns.
-              *  `"all_ast"`: `"all"` without the comet-related columns.
-              *  `"all_com"`: `"all"` without the asteroid-related columns.
-
-            Default is ``"pdes"``.
-
-        sort : str, optional
-            Sort results by the specified field(s). Up to three fields can be
-            specified, separated by commas (``,``) and descending direction can
-            be specified by prefixing the field name with minus (``-``)
-            (ascending is the default).
-
-        limit : int, optional
-            Limit data to the first `limit` results (where `limit` is the
-            specified number and must be an integer value greater than zero).
-            Default is `100`, so if you want all results, set `limit` to
-            `None`.
-
-        limit_from : int, optional
-            Limit data starting from the specified record (where zero is the
-            first record). Useful for “paging” through large datasets. Requires
-            `limit`. **CAUTION**: it is possible for the underlying database to
-            change between API calls.
-
-        full_prec : bool, int optional
-            Output data in full precision (normally, data are returned in
-            reduced precision for display purposes). Default is `False`.
-
-        sb_ns : str, optional
-            Numbered status: restrict query results to either numbered
-            (``"n"``) or unnumbered (``"u"``) small-bodies.
-
-        sb_kind : str, optional
-            Limit results to either asteroids-only (``"a"``) or comets-only
-            (``"c"``).
-
-        sb_group : str, optional
-            Limit results to NEOs-only (``"neo"``) or PHAs-only (``"pha"``).
-
-        sb_class : str (comma-separated) or list of str, optional
-            Limit results to small-bodies with orbits of the specified class
-            (or classes). Allowable values are valid 3-character orbit-class
-            codes (see section below on orbit classes). If specifying more than
-            one class, separate entities with a comma (e.g., ``"TJN,CEN"``) or
-            provide a list of str (e.g., ``["TJN", "CEN"]``). **Codes are
-            case-sensitive.**
-            See "Available SBDB Orbit Classes" section at the link for details:
-            https://ssd-api.jpl.nasa.gov/doc/sbdb_filter.html
-
-        sb_sat : bool, optional
-            Limit results to small-bodies with at least one known satellite.
-
-        sb_xfrag : bool, optional
-            Exclude all comet fragments (if any) from results.
-
-        sb_defs : {"class", "field", "all"}, optional
-            Return SBDB definitions and data related to available filter
-            constraints. These data are typically only useful in supporting
-            webpage apps. See "mode ``I``" section in the link for details.
-            https://ssd-api.jpl.nasa.gov/doc/sbdb_filter.html
-            If provided, mode ``I`` will be used, and all other parameters
-            except `info` will completely be ignored.
-
-        sb_cdata : str, optional
-            Custom field constraints (``"sb-cdata"`` field). Maximum length is
-            2048 characters when converted to the URI encoded string.
-            See this link for details:
-            https://ssd-api.jpl.nasa.gov/doc/sbdb_filter.html#constraints
-
-
-        Notes
-        -----
-        This will get matured/generated in the future similar to
-        `astroquery.jplsbdb`. This is at a primitive stage to query all
-        information specifically for "all objects"
-        """
         self.base_url = "https://ssd-api.jpl.nasa.gov/sbdb_query.api?"
 
         params = {}
@@ -372,10 +365,10 @@ class SBDBQuery:
         Parameters
         ----------
         kind2bools : bool, optional
-            If `True`, convert ``"kind"`` column to two boolean columns::
+            If `True`, convert ``"kind"`` column to two boolean columns:
 
-              * `is_comet`: `True` if ``"kind"`` starts with "c", not "a"
-              * `has_number`: `True` if ``"kind"`` ends with "n", not "u".
+              * `"is_comet"`: `True` if ``"kind"`` starts with "c", not "a"
+              * `"has_number"`: `True` if ``"kind"`` ends with "n", not "u".
 
             Default is `True`.
 
@@ -391,8 +384,7 @@ class SBDBQuery:
             Default is `True`.
 
         drop_unreliable : bool, optional
-            If `True`, drop unreliable objects based on the following criteria
-            ..::
+            If `True`, drop unreliable objects based on the following criteria:
 
               * no magnitude-related information (H, G, M1, M2, K1, K2, PC)
               * prefix is "D" or "X" (disappeared or lost comets)
@@ -535,11 +527,11 @@ def sanitize_sbdb(orb, drop_unreliable=True, drop_impacted=True):
         The SBDB orbit table to be sanitized.
 
     drop_impacted : bool, optional
-        If `True`, drop impacted objects based on `IMPACTED` list.
+        If `True`, drop impacted objects based on `~skyloc.IMPACTED` list.
         Default is `True`.
 
     drop_unreliable : bool, optional
-        If `True`, drop unreliable objects based on the following criteria ..::
+        If `True`, drop unreliable objects based on the following criteria:
 
           - no magnitude-related information
           - prefix is "D" or "X" (disappeared or lost comets)

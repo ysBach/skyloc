@@ -34,7 +34,7 @@ Control individual module verbosity:
 
 Developer Note
 --------------
-In each module, use the standard pattern:
+In each module, use the standard pattern::
 
     import logging
     logger = logging.getLogger(__name__)
