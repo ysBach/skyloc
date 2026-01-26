@@ -32,6 +32,9 @@ def fetch_orb(
 ):
     """Fetch the orbit data from API and save it to a parquet file.
 
+    **Note**: kete is only required when `output=None`. In that case, install with:
+    ``pip install skyloc[kete]``
+
     Parameters
     ----------
     output : path-like, optional
@@ -115,6 +118,9 @@ def fetch_orb(
     `fetch_orb(update_output=False)`.
     """
     if output is None:
+        from .keteutils._kete_import import require_kete
+
+        require_kete()
         from kete.cache import cache_path
 
         output = Path(cache_path()) / "horizons_orbits.parq"

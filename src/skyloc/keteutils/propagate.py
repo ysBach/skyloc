@@ -1,7 +1,7 @@
 from pathlib import Path
 import logging
 
-import kete
+from ._kete_import import kete, require_kete
 import numpy as np
 import pandas as pd
 
@@ -19,8 +19,12 @@ __all__ = [
 DEGPERDAY2ARCSECPERMIN = 3600 / (24 * 60)
 
 
+@require_kete
 def replace_loaded_with_spice(states, jd):
     """Replace states of loaded asteroids with SPICE data.
+
+    **Requires kete**: This function needs kete to be installed.
+    Install with: ``pip install skyloc[kete]``
 
     When `include_asteroids=True` is used in `kete.propagate_n_body`, the 5 large
     asteroids (Ceres, Pallas, Vesta, Hygiea, Interamnia) are used as perturbers.
@@ -72,6 +76,7 @@ def replace_loaded_with_spice(states, jd):
     return new_states
 
 
+@require_kete
 def make_nongravs_models(
     orb,
     m_ng=None,
@@ -91,6 +96,9 @@ def make_nongravs_models(
     c_k="k",
 ):
     """Create a list of non-gravitational models for the objects in the orbit file.
+
+    **Requires kete**: This function needs kete to be installed.
+    Install with: ``pip install skyloc[kete]``
 
     Parameters
     ----------
@@ -200,6 +208,9 @@ def orb2state_propagate(
 ):
     """Convert the orbit file to state vector and propagate the orbit.
 
+    **Requires kete**: This function needs kete to be installed.
+    Install with: ``pip install skyloc[kete]``
+
     Parameters
     ----------
     orb : pd.DataFrame
@@ -239,6 +250,7 @@ def orb2state_propagate(
         The propagated states of the objects at the given JD.
 
     """
+    require_kete()
     if output is not None and Path(output).exists() and not overwrite:
         states = None
         states0 = kete.SimultaneousStates.load_parquet(output)
@@ -278,6 +290,9 @@ def calc_geometries(
     rates_in_arcsec_per_min=True,
 ):
     """Calculate phase angle alpha, distances, and lon/lats.
+
+    **Requires kete**: This function needs kete to be installed.
+    Install with: ``pip install skyloc[kete]``
 
     Parameters
     ----------
@@ -332,6 +347,7 @@ def calc_geometries(
     Takes ~1 ms for 1000 objects (MBP 14" [2024, macOS 15.2,
     M4Pro(8P+4E/G20c/N16c/48G)])
     """
+    require_kete()
     # obs2objs = simulstates.obs_vecs
 
     _obs = simulstates.fov.observer
@@ -393,13 +409,17 @@ def calc_geometries(
     # Heliocentric ecliptic coordinates of the object
     # lon = atan2(y, x), lat = atan2(z, sqrt(x^2 + y^2))
     if do_hel_ecl:
-        geoms["hel_ecl_lon"] = np.rad2deg(np.arctan2(sun2obj_xyz[:, 1], sun2obj_xyz[:, 0]))
+        geoms["hel_ecl_lon"] = np.rad2deg(
+            np.arctan2(sun2obj_xyz[:, 1], sun2obj_xyz[:, 0])
+        )
         xy_hel = np.hypot(sun2obj_xyz[:, 0], sun2obj_xyz[:, 1])
         geoms["hel_ecl_lat"] = np.rad2deg(np.arctan2(sun2obj_xyz[:, 2], xy_hel))
 
     # Observer-centric ecliptic coordinates of the object
     if do_obs_ecl:
-        geoms["obs_ecl_lon"] = np.rad2deg(np.arctan2(obs2obj_xyz[:, 1], obs2obj_xyz[:, 0]))
+        geoms["obs_ecl_lon"] = np.rad2deg(
+            np.arctan2(obs2obj_xyz[:, 1], obs2obj_xyz[:, 0])
+        )
         xy_obs = np.hypot(obs2obj_xyz[:, 0], obs2obj_xyz[:, 1])
         geoms["obs_ecl_lat"] = np.rad2deg(np.arctan2(obs2obj_xyz[:, 2], xy_obs))
 
@@ -422,7 +442,7 @@ def calc_geometries(
 
 
 def horizonscov2elems(obj, n_samples=1000, seed=None):
-    """ Generate samples from a covariance matrix for HorizonsProperties
+    """Generate samples from a covariance matrix for HorizonsProperties
 
     Parameters
     ----------
@@ -440,7 +460,6 @@ def horizonscov2elems(obj, n_samples=1000, seed=None):
     kete only returns `state` while some may want just the elements.
     """
     pass
-
 
 
 '''

@@ -3,7 +3,7 @@ Simple constants and utility functions that has extremely simple dependence on
 kete, and will likely be used throughout many modules.
 """
 
-import kete
+from ._kete_import import kete, require_kete
 
 __all__ = [
     "get_kete_loaded_objects",
@@ -14,8 +14,12 @@ __all__ = [
 _KETE_CACHE = None
 
 
+@require_kete
 def get_kete_loaded_objects():
     """Get loaded kete SPICE objects with lazy initialization.
+
+    **Requires kete**: This function needs kete to be installed.
+    Install with: ``pip install skyloc[kete]``
 
     Returns a dict with keys:
     - 'spks': list of SPK IDs as strings
@@ -54,18 +58,22 @@ def get_kete_loaded_objects():
         spks_name.append(name)
 
     _KETE_CACHE = {
-        'spks': spks,
-        'spks_name': spks_name,
-        'name2id': name2id,
-        'id2name': id2name,
-        'asteroids': asteroids,
-        'asteroids_name': asteroids_name,
+        "spks": spks,
+        "spks_name": spks_name,
+        "name2id": name2id,
+        "id2name": id2name,
+        "asteroids": asteroids,
+        "asteroids_name": asteroids_name,
     }
     return _KETE_CACHE
 
 
+@require_kete
 def parse_frame(frame):
     """Parse a frame input into a `kete.Frame` object.
+
+    **Requires kete**: This function needs kete to be installed.
+    Install with: ``pip install skyloc[kete]``
 
     Parameters
     ----------

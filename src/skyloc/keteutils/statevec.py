@@ -1,19 +1,23 @@
-import kete
+from ._kete_import import kete, require_kete
 from ._util import parse_frame
 
 __all__ = ["make_kete_state"]
 
 
+@require_kete
 def make_kete_state(
     state_desig,
     jd_tdb,
     pos_au,
     vel_aupd,
     center_id=399,
-    pos_frame=kete.Frames.Ecliptic,
-    vel_frame=kete.Frames.Ecliptic,
+    pos_frame=None,
+    vel_frame=None,
 ):
     """Convenience function to create a `kete.State` object.
+
+    **Requires kete**: This function needs kete to be installed.
+    Install with: ``pip install skyloc[kete]``
 
     Parameters
     ----------
@@ -31,6 +35,10 @@ def make_kete_state(
         The frame of the position and velocity, by default
         `kete.Frames.Ecliptic`.
     """
+    if pos_frame is None:
+        pos_frame = kete.Frames.Ecliptic
+    if vel_frame is None:
+        vel_frame = kete.Frames.Ecliptic
     return kete.State(
         desig=state_desig,
         jd=jd_tdb,
@@ -41,16 +49,20 @@ def make_kete_state(
 
 
 # FIXME: Under Development
+@require_kete
 def make_kete_states(
     state_desig,
     jd_tdb,
     pos_au,
     vel_aupd,
     center_id=399,
-    pos_frame=kete.Frames.Ecliptic,
-    vel_frame=kete.Frames.Ecliptic,
+    pos_frame=None,
+    vel_frame=None,
 ):
     """Convenience function to create a `kete.State` object(s).
+
+    **Requires kete**: This function needs kete to be installed.
+    Install with: ``pip install skyloc[kete]``
 
     Parameters
     ----------
@@ -81,8 +93,14 @@ def make_kete_states(
         If array-like, it should have the same length as `jd_tdb`.
 
     """
+    require_kete()
     import numpy as np
     from ..utils import as_iter
+
+    if pos_frame is None:
+        pos_frame = kete.Frames.Ecliptic
+    if vel_frame is None:
+        vel_frame = kete.Frames.Ecliptic
 
     if np.size(jd_tdb) == 1:
         return kete.State(

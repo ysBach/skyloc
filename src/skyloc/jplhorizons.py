@@ -5,7 +5,7 @@ import logging
 import requests
 from astropy.table import vstack
 import numpy as np
-import kete
+from .keteutils._kete_import import kete, require_kete
 from astropy import units as u
 from astropy import constants as c
 from astropy.table import Table
@@ -291,6 +291,7 @@ def horizons_vector(
     is_loaded_loc, _locid = is_spk_loaded(location)
 
     if try_spice and is_loaded_obs and is_loaded_loc:
+        require_kete()
         logger.debug("Using SPICE kernels for %s @ %s", obsid, location)
         # Do not query at all
         _frame = parse_frame({"ecliptic": "Ecliptic", "earth": "Equatorial"}[refplane])
@@ -372,10 +373,12 @@ def horizons_vector(
     return vecs
 
 
-def horizonsvec2ketestate(
-    vec, desigs=None, frame=kete.Frames.Ecliptic, center_id=10, invert=False
-):
+@require_kete
+def horizonsvec2ketestate(vec, desigs=None, frame=None, center_id=10, invert=False):
     """Convert JPL Horizons vector query result to `kete` state vector.
+
+    **Requires kete**: This function needs kete to be installed.
+    Install with: ``pip install skyloc[kete]``
 
     Parameters
     ----------
@@ -407,6 +410,8 @@ def horizonsvec2ketestate(
     states : `~kete.SimultaneousStates`
         The `kete` state vector object.
     """
+    if frame is None:
+        frame = kete.Frames.Ecliptic
     if desigs is None:
         desigs = vec["targetname"]
     # Convert to Kete State objects
@@ -515,7 +520,9 @@ def horizons_quick(
                     records.append((epoch_yr, rec_num, parts[0]))
 
             if not records:
-                logger.error("Could not parse ambiguous record list from error message.")
+                logger.error(
+                    "Could not parse ambiguous record list from error message."
+                )
                 raise e
 
             # Sort by Epoch-yr (descending), then Record # (descending)

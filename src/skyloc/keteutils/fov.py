@@ -1,6 +1,6 @@
 from pathlib import Path
 
-import kete
+from ._kete_import import kete, require_kete
 import numpy as np
 
 from .statevec import make_kete_state
@@ -52,6 +52,7 @@ class FOVCollection:
         sort_fovlist : bool, optional
             If `True`, the FOVs will be sorted by JD (`kete.fov.FOVList.sort()`).
         """
+        require_kete()
         self.fovlist, self.fovarr = make_fovlist(fovs, sort=sort_fovlist)
 
         if fov_desigs is None:
@@ -200,6 +201,7 @@ class FOVCollection:
         This is a class method that can be called as FOVCollection.load(filename).
         It loads the FOVList from the file and creates a new FOVCollection instance.
         """
+        require_kete()
         _fovl = kete.fov.FOVList.load(filename)
         return cls(_fovl)
 
@@ -207,6 +209,9 @@ class FOVCollection:
 def make_fovlist(fovs, output=None, overwrite=False, sort=False):
     """Convenience function to create a `kete.FOVList` object from an iterable of
     `kete.FOV` objects.
+
+    **Requires kete**: This function needs kete to be installed.
+    Install with: ``pip install skyloc[kete]``
 
     Parameters
     ----------
@@ -237,6 +242,7 @@ def make_fovlist(fovs, output=None, overwrite=False, sort=False):
     -----
     Preferred way: use `FOVCollection`.
     """
+    require_kete()
     if output is None:
         out_exists = False
     else:
@@ -281,12 +287,15 @@ def make_rect_fov(
     rotation_deg,
     lon_width_deg=0.1,
     lat_width_deg=0.1,
-    pos_frame=kete.Frames.Ecliptic,
-    vel_frame=kete.Frames.Ecliptic,
+    pos_frame=None,
+    vel_frame=None,
     center_id=399,
     fov_to_sun=True,
 ):
     """Make kete RectangleFOV
+
+    **Requires kete**: This function needs kete to be installed.
+    Install with: ``pip install skyloc[kete]``
 
     Parameters
     ----------
@@ -332,6 +341,11 @@ def make_rect_fov(
     fov : `kete.RectangleFOV`
         The field of view.
     """
+    require_kete()
+    if pos_frame is None:
+        pos_frame = kete.Frames.Ecliptic
+    if vel_frame is None:
+        vel_frame = kete.Frames.Ecliptic
     obssta = make_kete_state(
         state_desig=state_desig,
         jd_tdb=jd_tdb,
@@ -362,12 +376,15 @@ def make_cone_fov(
     center_ra_deg,
     center_dec_deg,
     radius_deg=0.1,
-    pos_frame=kete.Frames.Ecliptic,
-    vel_frame=kete.Frames.Ecliptic,
+    pos_frame=None,
+    vel_frame=None,
     center_id=399,
     fov_to_sun=True,
 ):
     """Make kete ConeFOV
+
+    **Requires kete**: This function needs kete to be installed.
+    Install with: ``pip install skyloc[kete]``
 
     Parameters
     ----------
@@ -411,6 +428,11 @@ def make_cone_fov(
     fov : `kete.ConeFOV`
         The field of view.
     """
+    require_kete()
+    if pos_frame is None:
+        pos_frame = kete.Frames.Ecliptic
+    if vel_frame is None:
+        vel_frame = kete.Frames.Ecliptic
     obssta = make_kete_state(
         state_desig=state_desig,
         jd_tdb=jd_tdb,
@@ -437,12 +459,15 @@ def make_omni_fov(
     jd_tdb,
     pos_au,
     vel_aupd,
-    pos_frame=kete.Frames.Ecliptic,
-    vel_frame=kete.Frames.Ecliptic,
+    pos_frame=None,
+    vel_frame=None,
     center_id=399,
     fov_to_sun=True,
 ):
     """Make kete OmniDirectionalFOV
+
+    **Requires kete**: This function needs kete to be installed.
+    Install with: ``pip install skyloc[kete]``
 
     Parameters
     ----------
@@ -477,6 +502,11 @@ def make_omni_fov(
     fov : `kete.OmniDirectionalFOV`
         The field of view.
     """
+    require_kete()
+    if pos_frame is None:
+        pos_frame = kete.Frames.Ecliptic
+    if vel_frame is None:
+        vel_frame = kete.Frames.Ecliptic
     obssta = make_kete_state(
         state_desig=state_desig,
         jd_tdb=jd_tdb,

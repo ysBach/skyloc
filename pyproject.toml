@@ -27,7 +27,15 @@ dependencies = [
     "pandas",
     "astropy",
     "spiceypy",
-    "kete >=1.0.8, <2.0.0",
+    "requests",
+    "astroquery",
+    "healpy",
+    "pyarrow",
+]
+
+[project.optional-dependencies]
+kete = [
+    "kete >=1.0.8, <2.0.0",  # skyloc depends on Caltech IPAC version
 ]
 
 

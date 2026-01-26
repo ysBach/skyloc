@@ -155,7 +155,6 @@ KETE_SBDB2KETECOLS = {
 }
 
 
-
 # KETE_SINGLESBDB2KETECOLS = {
 # _PARAM_MAP = {
 #     "a1": "a1",
