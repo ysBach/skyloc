@@ -31,16 +31,21 @@ DEFAULT_COORD_MAP : dict
 """
 
 import re
+from glob import glob
+from pathlib import Path
 
 import healpy as hp
 import numpy as np
 import pandas as pd
 import pyarrow.dataset as ds
 
+from ._filter_utils import apply_filter_operator, validate_operator
+
 __all__ = [
     "EPH_DTYPES_BASE",
     "compact_ephem_parq_cols",
     "load_compact_parq_ephem",
+    "filter_ephem",
 ]
 
 # EPH_DTYPES_BASE: Base ephemeris column compression specifications.
@@ -281,25 +286,8 @@ def load_compact_parq_ephem(
 
     def _build_pa_expr(col, op, val):
         """Build a PyArrow expression from a filter tuple."""
-        field = ds.field(col)
-        if op == ">":
-            return field > val
-        elif op == ">=":
-            return field >= val
-        elif op == "<":
-            return field < val
-        elif op == "<=":
-            return field <= val
-        elif op == "==":
-            return field == val
-        elif op == "!=":
-            return field != val
-        elif op == "in":
-            return field.isin(val)
-        elif op == "not in":
-            return ~field.isin(val)
-        else:
-            raise ValueError(f"Unsupported operator: {op}")
+        validate_operator(op)
+        return apply_filter_operator(op, ds.field(col), val)
 
     def _parse_healpix_col(colname):
         """Parse HEALPix column name to extract coord_name, scheme, nside."""
@@ -418,3 +406,220 @@ def load_compact_parq_ephem(
         df = df[available]
 
     return df.reset_index(drop=True)
+
+
+def filter_ephem(
+    filelist,
+    dtypes=None,
+    filter_per_file=True,
+    output=None,
+    overwrite=False,
+    columns=None,
+    coord_map=None,
+    **filter_kwargs,
+):
+    """Filter ephemeris parquet files and optionally save the result.
+
+    This function loads compacted ephemeris Parquet files, applies filters
+    based on column values, and returns the filtered DataFrame. It can process
+    files individually or concatenate first, and optionally save the result.
+
+    Parameters
+    ----------
+    filelist : str, Path, or list-like
+        Files to filter. Can be:
+        - Glob pattern string (e.g., 'data/*.parquet')
+        - Single file path
+        - List of file paths
+
+    dtypes : dict, optional
+        Dictionary mapping column names to (factor, stored_dtype, navalue, desired_dtype).
+        If None, uses EPH_DTYPES_BASE.
+
+    filter_per_file : bool, optional
+        If True (default), apply filters to each file separately then concatenate.
+        If False, load all files first, concatenate, then filter once.
+        Use True for better memory efficiency with large datasets.
+
+    output : str or Path, optional
+        Path to save the filtered result as Parquet. If None, result is not saved.
+
+    overwrite : bool, optional
+        If True, overwrite existing output file. Default is False.
+
+    columns : list of str, optional
+        Columns to load and return. Use original column names.
+
+    coord_map : dict, optional
+        Mapping from coord_name to (lon_col, lat_col). If None, uses DEFAULT_COORD_MAP.
+
+    **filter_kwargs
+        Filter conditions as keyword arguments. Each kwarg becomes a filter:
+        - Column name as key
+        - Filter value as value (see formats below)
+
+        **Supported filter formats:**
+
+        **Comparison operators** (as tuples)::
+
+            filter_ephem(files, vmag=('<', 20))
+            filter_ephem(files, dec=('>', 30), ra=('<=', 180))
+
+        **Equality/inequality**::
+
+            filter_ephem(files, desig=123)  # Equal to
+            filter_ephem(files, desig=('!=', 123))  # Not equal
+
+        **Membership** (lists or tuples without operator)::
+
+            filter_ephem(files, desig=[1, 2, 3])  # desig in [1, 2, 3]
+            filter_ephem(files, desig=('not in', [1, 2, 3]))
+
+        Supported operators: '>', '>=', '<', '<=', '==', '!=', 'in', 'not in'
+
+    Returns
+    -------
+    pd.DataFrame
+        Filtered ephemeris DataFrame with original column names and values.
+
+    Raises
+    ------
+    FileNotFoundError
+        If no files match the glob pattern or file list is empty.
+    FileExistsError
+        If output file exists and overwrite=False.
+    ValueError
+        If filter syntax is invalid or filters on coordinate columns.
+
+    Examples
+    --------
+    Filter by magnitude and designation::
+
+        df = filter_ephem('data/*.parquet', vmag=('<', 20), desig=[1, 2, 3])
+
+    Filter and save to file::
+
+        df = filter_ephem(
+            'data/*.parquet',
+            vmag=('<', 20),
+            dec=('>', 30),
+            output='filtered.parquet'
+        )
+
+    Load all files first, then filter::
+
+        df = filter_ephem(
+            ['file1.parquet', 'file2.parquet'],
+            filter_per_file=False,
+            alpha=('>', 10)
+        )
+
+    Notes
+    -----
+    - Coordinate columns (ra, dec, etc.) cannot be pre-filtered during file loading
+      due to HEALPix encoding. To filter on coordinates, use filter_per_file=False
+      or filter the returned DataFrame manually.
+    - When filter_per_file=True, filters are applied during Parquet read for
+      better memory efficiency.
+    """
+    if dtypes is None:
+        dtypes = EPH_DTYPES_BASE
+
+    if coord_map is None:
+        coord_map = DEFAULT_COORD_MAP
+
+    # Resolve file list
+    if isinstance(filelist, (str, Path)):
+        filelist_str = str(filelist)
+        if any(c in filelist_str for c in ["*", "?", "[", "]"]):
+            files = sorted(glob(filelist_str))
+        else:
+            files = [filelist_str]
+    else:
+        files = [str(f) for f in filelist]
+
+    if not files:
+        raise FileNotFoundError(f"No files found matching pattern: {filelist}")
+
+    # Parse filter_kwargs into pyarrow filter format
+    filters = []
+    for col, val in filter_kwargs.items():
+        if isinstance(val, tuple):
+            if len(val) == 2:
+                op, filter_val = val
+                if op in ("in", "not in"):
+                    filters.append((col, op, filter_val))
+                elif op in (">", ">=", "<", "<=", "==", "!="):
+                    filters.append((col, op, filter_val))
+                else:
+                    validate_operator(op, col=col)
+            else:
+                raise ValueError(
+                    f"Filter tuple for '{col}' must have 2 elements (op, value), got {len(val)}"
+                )
+        elif isinstance(val, (list, tuple)):
+            filters.append((col, "in", val))
+        else:
+            filters.append((col, "==", val))
+
+    # Load and filter data
+    if filter_per_file:
+        dfs = []
+        for fpath in files:
+            try:
+                df = load_compact_parq_ephem(
+                    fpath,
+                    dtypes=dtypes,
+                    filters=filters if filters else None,
+                    columns=columns,
+                    coord_map=coord_map,
+                )
+                if not df.empty:
+                    dfs.append(df)
+            except Exception as e:
+                raise RuntimeError(f"Error loading {fpath}: {e}") from e
+
+        if not dfs:
+            result = pd.DataFrame()
+        else:
+            result = pd.concat(dfs, ignore_index=True)
+    else:
+        dfs = []
+        for fpath in files:
+            try:
+                df = load_compact_parq_ephem(
+                    fpath,
+                    dtypes=dtypes,
+                    filters=None,
+                    columns=columns,
+                    coord_map=coord_map,
+                )
+                if not df.empty:
+                    dfs.append(df)
+            except Exception as e:
+                raise RuntimeError(f"Error loading {fpath}: {e}") from e
+
+        if not dfs:
+            result = pd.DataFrame()
+        else:
+            result = pd.concat(dfs, ignore_index=True)
+
+            # Apply filters to concatenated DataFrame
+            if filters:
+                mask = pd.Series(True, index=result.index)
+                for col, op, val in filters:
+                    if col not in result.columns:
+                        continue
+                    mask &= apply_filter_operator(op, result[col], val)
+                result = result[mask].reset_index(drop=True)
+
+    # Save output if requested
+    if output is not None:
+        output_path = Path(output)
+        if output_path.exists() and not overwrite:
+            raise FileExistsError(
+                f"Output file '{output}' already exists. Use overwrite=True to replace."
+            )
+        result.to_parquet(output, index=False)
+
+    return result
