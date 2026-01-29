@@ -2,13 +2,17 @@ from functools import cached_property
 from pathlib import Path
 import logging
 
-import kete
+from .keteutils._kete_import import kete, require_kete
 import numpy as np
 import pandas as pd
 
 from .configs import MINIMUM_ORB_COLS
 from .keteutils.fov import FOVCollection
-from .keteutils.propagate import calc_geometries, make_nongravs_models, replace_loaded_with_spice
+from .keteutils.propagate import (
+    calc_geometries,
+    make_nongravs_models,
+    replace_loaded_with_spice,
+)
 from .keteutils._util import get_kete_loaded_objects
 from .keteutils import (
     get_default_spice_targets,
@@ -363,9 +367,7 @@ class SpiceLocator(Locator):
         obsids = []
 
         for idx, _simulstates in enumerate(self.fov_check_simstates):
-            geoms = calc_geometries(
-                _simulstates, rates_in_arcsec_per_min=True
-            )
+            geoms = calc_geometries(_simulstates, rates_in_arcsec_per_min=True)
 
             # For SPICE objects, we don't have H/G magnitudes, use placeholder
             geoms["vmag"] = np.full(len(geoms["desig"]), 99.0, dtype=np.float32)
@@ -644,7 +646,7 @@ class SSOLocator(Locator):
         self._validate_orb(orb)
         if drop_major_asteroids:
             cache = get_kete_loaded_objects()
-            orb = orb[~orb.desig.isin(cache['asteroids'])]
+            orb = orb[~orb.desig.isin(cache["asteroids"])]
         self._orb = orb
 
         if isinstance(non_gravs, bool):
@@ -1011,7 +1013,9 @@ def _calc_ephem(
     # Only keep orbital elements for objects present in geoms, in the order of geoms.
     # Note: orb["desig"] must be unique for correct reindexing.
     if orb["desig"].duplicated().any():
-        logger.warning("Duplicate designations found in orbit file. Magnitude calculation may be incorrect.")
+        logger.warning(
+            "Duplicate designations found in orbit file. Magnitude calculation may be incorrect."
+        )
         orb = orb.drop_duplicates(subset="desig")
 
     # Check for matches
@@ -1042,21 +1046,39 @@ def _calc_ephem(
         # Extract parameters for magnitude calculation
         g_vals = orb_aligned["G"].fillna(gpar_default).to_numpy()
         h_vals = orb_aligned["H"].to_numpy()
-        m1 = orb_aligned.get("M1", pd.Series(np.nan, index=orb_aligned.index)).to_numpy()
-        m2 = orb_aligned.get("M2", pd.Series(np.nan, index=orb_aligned.index)).to_numpy()
-        k1 = orb_aligned.get("K1", pd.Series(np.nan, index=orb_aligned.index)).to_numpy()
-        k2 = orb_aligned.get("K2", pd.Series(np.nan, index=orb_aligned.index)).to_numpy()
-        pc = orb_aligned.get("PC", pd.Series(np.nan, index=orb_aligned.index)).to_numpy()
+        m1 = orb_aligned.get(
+            "M1", pd.Series(np.nan, index=orb_aligned.index)
+        ).to_numpy()
+        m2 = orb_aligned.get(
+            "M2", pd.Series(np.nan, index=orb_aligned.index)
+        ).to_numpy()
+        k1 = orb_aligned.get(
+            "K1", pd.Series(np.nan, index=orb_aligned.index)
+        ).to_numpy()
+        k2 = orb_aligned.get(
+            "K2", pd.Series(np.nan, index=orb_aligned.index)
+        ).to_numpy()
+        pc = orb_aligned.get(
+            "PC", pd.Series(np.nan, index=orb_aligned.index)
+        ).to_numpy()
 
         # Extract geometry for these objects
         alpha_sub = np.array(geoms["alpha"])[orb_indices]
         r_obs_sub = np.array(geoms["r_obs"])[orb_indices]
         r_hel_sub = np.array(geoms["r_hel"])[orb_indices]
 
-        vmags = iau_hg_mag(h_vals, alpha_sub, gpar=g_vals, robs=r_obs_sub, rhel=r_hel_sub)
+        vmags = iau_hg_mag(
+            h_vals, alpha_sub, gpar=g_vals, robs=r_obs_sub, rhel=r_hel_sub
+        )
         tmags, nmags = comet_mag(
-            m1=m1, m2=m2, k1=k1, k2=k2, pc=pc,
-            alpha__deg=alpha_sub, robs=r_obs_sub, rhel=r_hel_sub,
+            m1=m1,
+            m2=m2,
+            k1=k1,
+            k2=k2,
+            pc=pc,
+            alpha__deg=alpha_sub,
+            robs=r_obs_sub,
+            rhel=r_hel_sub,
         )
         # Either vmag or tmag/nmag, whichever is the brightest
         mag_sub = np.nanmin([vmags, tmags, nmags], axis=0)
