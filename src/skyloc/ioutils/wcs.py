@@ -3,7 +3,7 @@ import logging
 from numba import njit, float64, int64, boolean, prange
 from numba.experimental import jitclass
 
-__all__ = ["FastTanSipWCS", "infov2d", "all_world2pix_infov"]
+__all__ = ["FastTanSipWCS", "infov2d", "all_world2pix_infov", "PARALLEL_THRESHOLD_DEFAULT"]
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +15,7 @@ SOLVER_H = 0.1
 SOLVER_H_INV = 1.0 / SOLVER_H
 D2R = np.pi / 180.0
 R2D = 180.0 / np.pi
+PARALLEL_THRESHOLD_DEFAULT = 2000
 
 spec = [
     ("crval", float64[:]),
@@ -390,12 +391,13 @@ class FastTanSipWCS:
         Threshold for switching to parallel processing in batch transformations.
         For input arrays smaller than this size, a serial loop is used to avoid
         parallel overhead. Applies only to `all_pix2world`. `all_world2pix` is
-        always serial due to Newton-Raphson thread divergence. Default is ``2000``.
+        always serial due to Newton-Raphson thread divergence. Default is
+        ``PARALLEL_THRESHOLD_DEFAULT``.
     """
 
     __slots__ = ("_wcs", "parallel_threshold")
 
-    def __init__(self, hdr_dict, parallel_threshold=2000):
+    def __init__(self, hdr_dict, parallel_threshold=PARALLEL_THRESHOLD_DEFAULT):
         self._wcs = create_wcs_from_dict(hdr_dict)
         self.parallel_threshold = parallel_threshold
 

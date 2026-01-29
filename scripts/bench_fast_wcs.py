@@ -248,13 +248,26 @@ def benchmark():
         )
         print("-" * 60)
 
+    print("\n[to_astropy conversion]")
+    w_fast = FastTanSipWCS(h_dict)
+
+    t_start = time.perf_counter()
+    n_conv = 100
+    for _ in range(n_conv):
+        _ = w_fast.to_astropy()
+    t_end = time.perf_counter()
+
+    print(f"Time per conversion: {(t_end - t_start) / n_conv * 1e3:.2f} ms")
+
     print("\n[Note on Parallel Threshold]")
-    print("FastTanSipWCS uses a parallel threshold (default 5000) for pix2world.")
+    print(f"FastTanSipWCS uses a parallel threshold (default {wcs.PARALLEL_THRESHOLD_DEFAULT}) for pix2world.")
     print("For N < threshold, it uses a serial loop to avoid overhead.")
     print("For N >= threshold, it uses Numba parallel (SIMD).")
     print("(Note: all_world2pix is forced to run serially for performance stability.)")
     print(
-        "You can tune this via 'w_fast = FastTanSipWCS(header, parallel_threshold=N)'."
+        "You can tune this via\n"
+        "skyloc.ioutils.wcs.PARALLEL_THRESHOLD_DEFAULT = N\nor\n"
+        "'w_fast = FastTanSipWCS(header, parallel_threshold=N)'."
     )
     print(
         "Analyze the table above: Look for the crossover where Speedup drops below 1.0."
