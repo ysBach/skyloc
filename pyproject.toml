@@ -31,12 +31,17 @@ dependencies = [
     "astroquery",
     "healpy",
     "pyarrow",
+    "click",
 ]
 
 [project.optional-dependencies]
 kete = [
     "kete >=1.0.8, <2.0.0",  # skyloc depends on Caltech IPAC version
 ]
+
+
+[project.scripts]
+filter-ephem = "skyloc.cli.filter_ephem:filter_ephem_cli"
 
 
 [tool.setuptools_scm]
