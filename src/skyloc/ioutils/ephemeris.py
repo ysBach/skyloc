@@ -620,6 +620,9 @@ def filter_ephem(
             raise FileExistsError(
                 f"Output file '{output}' already exists. Use overwrite=True to replace."
             )
-        result.to_parquet(output, index=False)
+        if output_path.suffix.lower() == ".csv":
+            result.to_csv(output, index=False)
+        else:
+            result.to_parquet(output, index=False)
 
     return result
