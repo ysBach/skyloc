@@ -149,16 +149,20 @@ def compact_ephem_parq_cols(
     for col, (factor, dtype, navalue, _) in dtypes.items():
         if col not in _eph.columns:
             continue
-        # Scale values
-        scaled = _eph[col] * factor
-        # Replace NaN with navalue
-        scaled = scaled.fillna(navalue)
+
         # Get dtype bounds
         dtype_info = np.iinfo(dtype)
         min_val, max_val = dtype_info.min, dtype_info.max
-        # Replace out-of-bounds values with navalue
-        out_of_bounds = (scaled < min_val) | (scaled > max_val)
-        scaled = scaled.where(~out_of_bounds, navalue)
+        col_data = _eph[col]
+
+        # Calculate bounds in original units
+        val_min_orig = min_val / factor
+        val_max_orig = max_val / factor
+        out_of_bounds = (col_data < val_min_orig) | (col_data > val_max_orig)
+
+        scaled = col_data * factor
+        scaled[out_of_bounds | pd.isna(col_data)] = navalue
+
         # Drop original column and create new compacted column
         _eph = _eph.drop(columns=[col])
         _eph[f"{col}*{factor}"] = scaled.astype(dtype)
