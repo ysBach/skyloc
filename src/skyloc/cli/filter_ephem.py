@@ -8,6 +8,9 @@ from ..ioutils.ephemeris import filter_ephem, EPH_DTYPES_BASE
 from ..ioutils._filter_utils import to_numeric_if_possible
 
 
+STRING_COLUMNS = ["desig"]
+
+
 def parse_filter_value(ctx, param, value):
     """Click callback to parse filter value string.
 
@@ -21,17 +24,25 @@ def parse_filter_value(ctx, param, value):
 
     value_str = value.strip()
 
+    # Determine if we should convert to numeric
+    # param.name corresponds to the option name (e.g., 'desig')
+    convert = True
+    if param and param.name in STRING_COLUMNS:
+        convert = False
+
+    converter = to_numeric_if_possible if convert else lambda x: x
+
     for op in [">=", "<=", "!=", "==", ">", "<"]:
         if value_str.startswith(op):
             val_part = value_str[len(op) :].strip()
-            return (op, to_numeric_if_possible(val_part))
+            return (op, converter(val_part))
 
     if "," in value_str:
         parts = [p.strip() for p in value_str.split(",")]
-        values = [to_numeric_if_possible(p) for p in parts]
+        values = [converter(p) for p in parts]
         return ("in", values)
 
-    return to_numeric_if_possible(value_str)
+    return converter(value_str)
 
 
 KNOWN_FILTER_COLUMNS = list(EPH_DTYPES_BASE.keys()) + [
@@ -54,7 +65,7 @@ for col in KNOWN_FILTER_COLUMNS:
 @click.command(name="filter-ephem")
 @click.argument("files", nargs=-1, required=True, type=click.Path(exists=False))
 @click.option(
-    "-o", "--output", required=True, type=click.Path(), help="Output parquet file path"
+    "-o", "--output", required=True, type=click.Path(), help="Output file path (parquet or csv)"
 )
 @click.option("--overwrite", is_flag=True, help="Overwrite output file if it exists")
 @click.option("--columns", help="Comma-separated list of columns to include in output")
@@ -66,7 +77,7 @@ for col in KNOWN_FILTER_COLUMNS:
 def filter_ephem_cli(
     files, output, overwrite, columns, filter_per_file, **filter_kwargs
 ):
-    """Filter ephemeris parquet files.
+    """Filter ephemeris parquet files (output to .parq or .csv).
 
     FILES: Parquet files or glob patterns to filter
 
