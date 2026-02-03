@@ -1181,7 +1181,7 @@ def calc_ephems(
             The heliocentric and observer-centric distances in AU.
         - ra, dec :
             The observer-centric (J2000) right ascension and declination in degrees.
-        - dra*cosdec/dt, ddec/dt :
+        - racosdec_rate, dec_rate :
             The observer-centric (J2000) right ascension and declination rates
             in degrees per day (or arcsec/min if `rates_in_arcsec_per_min` is
             `True`).

@@ -83,8 +83,10 @@ class TestCalcGeometries:
             "hel_ecl_lat",
             "obs_ecl_lon",
             "obs_ecl_lat",
-            "dra*cosdec/dt",
-            "ddec/dt",
+            "obs_ecl_lon",
+            "obs_ecl_lat",
+            "racosdec_rate",
+            "dec_rate",
             "sky_motion",
             "sky_motion_pa",
         ]
@@ -139,7 +141,7 @@ class TestCalcGeometries:
     def test_sky_motion_consistency(self, skyloc_geoms_geocentric):
         """sky_motion should equal hypot of rate components."""
         geoms = skyloc_geoms_geocentric
-        computed = np.hypot(geoms["dra*cosdec/dt"], geoms["ddec/dt"])
+        computed = np.hypot(geoms["racosdec_rate"], geoms["dec_rate"])
         np.testing.assert_allclose(geoms["sky_motion"], computed, rtol=1e-6)
 
 

@@ -210,5 +210,5 @@ class TestHorizonsQuick:
             location="500",
         )
         # Original Horizons is arcsec/hr, should be divided by 60
-        assert "dra*cosdec/dt" in eph2compare.columns
-        assert "ddec/dt" in eph2compare.columns
+        assert "racosdec_rate" in eph2compare.columns
+        assert "dec_rate" in eph2compare.columns

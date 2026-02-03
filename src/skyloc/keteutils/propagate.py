@@ -326,7 +326,7 @@ def calc_geometries(
             The heliocentric and observer-centric distances in AU.
         - ra, dec : np.ndarray
             The observer-centric (J2000) right ascension and declination in degrees.
-        - dra*cosdec/dt, ddec/dt : np.ndarray
+        - racosdec_rate, dec_rate : np.ndarray
             The observer-centric (J2000) right ascension and declination rates
             in degrees per day (or arcsec/min if `rates_in_arcsec_per_min` is
             `True`).
@@ -429,14 +429,14 @@ def calc_geometries(
         geoms["ra"] = radec[:, 0]
         geoms["dec"] = radec[:, 1]
         if rates_in_arcsec_per_min:
-            geoms["dra*cosdec/dt"] = radec[:, 2] * DEGPERDAY2ARCSECPERMIN
-            geoms["ddec/dt"] = radec[:, 3] * DEGPERDAY2ARCSECPERMIN
+            geoms["racosdec_rate"] = radec[:, 2] * DEGPERDAY2ARCSECPERMIN
+            geoms["dec_rate"] = radec[:, 3] * DEGPERDAY2ARCSECPERMIN
         else:
-            geoms["dra*cosdec/dt"] = radec[:, 2]
-            geoms["ddec/dt"] = radec[:, 3]
-        geoms["sky_motion"] = np.hypot(geoms["dra*cosdec/dt"], geoms["ddec/dt"])
+            geoms["racosdec_rate"] = radec[:, 2]
+            geoms["dec_rate"] = radec[:, 3]
+        geoms["sky_motion"] = np.hypot(geoms["racosdec_rate"], geoms["dec_rate"])
         geoms["sky_motion_pa"] = np.rad2deg(
-            np.arctan2(geoms["dra*cosdec/dt"], geoms["ddec/dt"])
+            np.arctan2(geoms["racosdec_rate"], geoms["dec_rate"])
         )
     return geoms
 

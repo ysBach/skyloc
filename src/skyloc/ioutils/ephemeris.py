@@ -19,7 +19,7 @@ EPH_DTYPES_BASE : dict
 
     - ``alpha``: ±5" precision, covers 0-180 deg phase angle
     - ``r_hel``, ``r_obs``: ±0.02 LD precision, covers 0-65.535 AU
-    - ``dra*cosdec/dt``, ``ddec/dt``: ±0.5 mas/min precision
+    - ``racosdec_rate``, ``dec_rate``: ±0.5 mas/min precision
     - ``sky_motion``: ±0.5 mas/min precision, 0-65.535 "/min
     - ``sky_motion_pa``: ±10" precision, covers -180 to +180 deg
     - ``vmag``: ±0.25 mmag precision, covers 0-32.76 mag
@@ -68,7 +68,7 @@ __all__ = [
 # Precision notes:
 #   - alpha: ±5" precision, covers 0-180 deg phase angle
 #   - r_hel, r_obs: ±0.02 LD precision (~1500 km), covers 0-65.535 AU
-#   - dra*cosdec/dt, ddec/dt: ±0.5 mas/min precision
+#   - racosdec_rate, dec_rate: ±0.5 mas/min precision
 #   - sky_motion: ±0.5 mas/min precision, 0-65.535 "/min
 #   - sky_motion_pa: ±10" precision, covers -180 to +180 deg
 #   - vmag: ±0.25 mmag precision, covers 0-32.76 mag
@@ -76,8 +76,8 @@ EPH_DTYPES_BASE = {
     "alpha": (360, "uint16", 65535, "float64"),
     "r_hel": (1000, "uint16", 0, "float64"),
     "r_obs": (1000, "uint16", 0, "float64"),
-    "dra*cosdec/dt": (1000, "int16", 0, "float64"),
-    "ddec/dt": (1000, "int16", 0, "float64"),
+    "racosdec_rate": (1000, "int16", 0, "float64"),
+    "dec_rate": (1000, "int16", 0, "float64"),
     "sky_motion": (1000, "uint16", 0, "float64"),
     "sky_motion_pa": (180, "int16", 32767, "float64"),
     "vmag": (2000, "uint16", 0, "float64"),

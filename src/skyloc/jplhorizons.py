@@ -550,8 +550,8 @@ def horizons_quick(
         "RA": "ra",
         "DEC": "dec",
         "alpha_true": "alpha",
-        "RA_rate": "dra*cosdec/dt",
-        "DEC_rate": "ddec/dt",
+        "RA_rate": "racosdec_rate",
+        "DEC_rate": "dec_rate",
         "r": "r_hel",
         "delta": "r_obs",
         "EclLon": "hel_ecl_lon",
@@ -569,6 +569,6 @@ def horizons_quick(
         :, eph2compare.columns.isin(["datetime_jd"] + list(colmaps.keys()))
     ]
     eph2compare = eph2compare.rename(columns=colmaps)
-    eph2compare["dra*cosdec/dt"] /= 60  # arcsec/h to arcsec/min
-    eph2compare["ddec/dt"] /= 60  # arcsec/h to arcsec/min
+    eph2compare["racosdec_rate"] /= 60  # arcsec/h to arcsec/min
+    eph2compare["dec_rate"] /= 60  # arcsec/h to arcsec/min
     return eph, eph2compare
