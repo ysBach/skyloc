@@ -19,7 +19,7 @@ EPH_DTYPES_BASE : dict
 
     - ``alpha``: ±5" precision, covers 0-180 deg phase angle
     - ``r_hel``, ``r_obs``: ±0.02 LD precision, covers 0-65.535 AU
-    - ``racosdec_rate``, ``dec_rate``: ±0.5 mas/min precision
+    - ``racosdec_rate``, ``dec_rate``: ±0.5 mas/min precision, covers ±32.7675 "/min
     - ``sky_motion``: ±0.5 mas/min precision, 0-65.535 "/min
     - ``sky_motion_pa``: ±10" precision, covers -180 to +180 deg
     - ``vmag``: ±0.25 mmag precision, covers 0-32.76 mag
@@ -67,9 +67,9 @@ __all__ = [
 #
 # Precision notes:
 #   - alpha: ±5" precision, covers 0-180 deg phase angle
-#   - r_hel, r_obs: ±0.02 LD precision (~1500 km), covers 0-65.535 AU
-#   - racosdec_rate, dec_rate: ±0.5 mas/min precision
-#   - sky_motion: ±0.5 mas/min precision, 0-65.535 "/min
+#   - r_hel, r_obs: 1.e-3au=±0.2 LD precision (~±75_000 km), covers 0-65.535 AU
+#   - racosdec_rate, dec_rate: ±0.5 mas/min precision, covers ±32.7675 "/min
+#   - sky_motion: ±0.5 mas/min precision, covers 0-65.535 "/min
 #   - sky_motion_pa: ±10" precision, covers -180 to +180 deg
 #   - vmag: ±0.25 mmag precision, covers 0-32.76 mag
 EPH_DTYPES_BASE = {
@@ -93,7 +93,7 @@ DEFAULT_COORD_MAP = {
 
 def compact_ephem_parq_cols(
     eph,
-    dtypes,
+    dtypes=None,
     nside=2**29,
     coord_cols=None,
     scheme="ring",
@@ -110,12 +110,15 @@ def compact_ephem_parq_cols(
     eph : pd.DataFrame
         Ephemeris DataFrame with columns to compact.
 
-    dtypes : dict
-        Dictionary mapping column names to (factor, stored_dtype, navalue, desired_dtype).
-        - factor: multiplication factor before storing
-        - stored_dtype: numpy dtype string for storage (e.g., 'uint16', 'int16')
-        - navalue: value to use for NaN and out-of-bounds entries
-        - desired_dtype: output dtype when loading (not used during compaction)
+    dtypes : dict, optional
+        Dictionary mapping column names to (factor, storing_dtype, navalue, original_dtype).
+
+          - factor: multiplication factor before storing
+          - storing_dtype: numpy dtype string for storage (e.g., 'uint16', 'int16')
+          - navalue: value to use for NaN and out-of-bounds entries
+          - original_dtype: output dtype when loading (not used during compaction)
+
+        If None, uses `EPH_DTYPES_BASE`.
 
     nside : int, optional
         HEALPix nside parameter. Default is 2**29 (~0.04 arcsec resolution).
@@ -146,12 +149,20 @@ def compact_ephem_parq_cols(
                 _eph = _eph.drop(columns=[col])
 
     # Compact factored columns
-    for col, (factor, dtype, navalue, _) in dtypes.items():
+    if dtypes is None:
+        dtypes = EPH_DTYPES_BASE
+    elif not isinstance(dtypes, dict):
+        raise TypeError(
+            "dtypes must be a dict mapping column names to "
+            "(factor<numeric>, storing_dtype, navalue<numeric>, original_dtype)"
+        )
+
+    for col, (factor, storing_dtype, navalue, _) in dtypes.items():
         if col not in _eph.columns:
             continue
 
         # Get dtype bounds
-        dtype_info = np.iinfo(dtype)
+        dtype_info = np.iinfo(storing_dtype)
         min_val, max_val = dtype_info.min, dtype_info.max
         col_data = _eph[col]
 
@@ -165,7 +176,7 @@ def compact_ephem_parq_cols(
 
         # Drop original column and create new compacted column
         _eph = _eph.drop(columns=[col])
-        _eph[f"{col}*{factor}"] = scaled.astype(dtype)
+        _eph[f"{col}*{factor}"] = scaled.astype(storing_dtype)
 
     # Build nside string for column name
     # If nside is a power of 2, use exponent notation
@@ -201,7 +212,7 @@ def compact_ephem_parq_cols(
 
 def load_compact_parq_ephem(
     fpath,
-    dtypes,
+    dtypes=None,
     filters=None,
     columns=None,
     coord_map=None,
@@ -217,9 +228,22 @@ def load_compact_parq_ephem(
     fpath : str or Path
         Path to the compacted ephemeris Parquet file.
 
-    dtypes : dict
-        Dictionary mapping original column names to (factor, stored_dtype, navalue, desired_dtype).
+    dtypes : dict, optional
+        Dictionary mapping original column names to (factor, stored_dtype, navalue, original_dtype).
+
+          - factor: factor multiplied to the stored value for compaction
+          - stored_dtype: (not used in this function)
+          - navalue: value used instead of NaN for the stored column
+          - original_dtype: The final desired dtype after decompression
+
         Must match the dtypes used during compaction.
+        If None, uses `EPH_DTYPES_BASE`.
+
+        .. warning::
+            If original dtype is not 64-bit float, NaN values (i.e.,
+            entries with compacted value equal to the navalue) will
+            silently be set to 0, because `np.nan` cannot be used (e.g.,
+            integer).
 
     filters : list, optional
         Filter expressions using original column names. Supports two formats:
@@ -267,10 +291,18 @@ def load_compact_parq_ephem(
         coord_cols.add(lon_col)
         coord_cols.add(lat_col)
 
-    # Build mapping from original col -> (stored_col, factor, navalue, desired_dtype)
+    if dtypes is None:
+        dtypes = EPH_DTYPES_BASE
+    elif not isinstance(dtypes, dict):
+        raise TypeError(
+            "dtypes must be a dict mapping column names to "
+            "(factor<numeric>, stored_dtype, navalue<numeric>, original_dtype)"
+        )
+
+    # Build mapping from original col -> (stored_col, factor, navalue, original_dtype)
     factor_map = {
-        col: (f"{col}*{factor}", factor, navalue, desired_dtype)
-        for col, (factor, _, navalue, desired_dtype) in dtypes.items()
+        col: (f"{col}*{factor}", factor, navalue, original_dtype)
+        for col, (factor, _, navalue, original_dtype) in dtypes.items()
     }
 
     def _transform_filter(filt):
@@ -310,16 +342,12 @@ def load_compact_parq_ephem(
     # Normalize filters to DNF (list of lists)
     pre_filter_groups = []
     if filters:
-        is_dnf = isinstance(filters[0], list)
-        if is_dnf:
+        if isinstance(filters[0], list):  # (list of lists)
             for group in filters:
-                pre_group = [_transform_filter(filt) for filt in group]
-                if pre_group:
+                if (pre_group := [_transform_filter(filt) for filt in group]):
                     pre_filter_groups.append(pre_group)
-        else:
-            pre_group = [_transform_filter(filt) for filt in filters]
-            if pre_group:
-                pre_filter_groups.append(pre_group)
+        elif (pre_group := [_transform_filter(filt) for filt in filters]):
+            pre_filter_groups.append(pre_group)
 
     # Determine which stored columns to load
     dataset = ds.dataset(fpath, format="parquet")
@@ -328,8 +356,7 @@ def load_compact_parq_ephem(
     # Auto-detect HEALPix columns
     hp_col_info = {}
     for col in all_stored_cols:
-        parsed = _parse_healpix_col(col)
-        if parsed:
+        if (parsed := _parse_healpix_col(col)):
             hp_col_info[col] = parsed
 
     # Build reverse map: original_col -> hp_col
@@ -374,16 +401,22 @@ def load_compact_parq_ephem(
     df = table.to_pandas()
 
     # Decompress factored columns
-    for orig_col, (stored_col, factor, navalue, desired_dtype) in factor_map.items():
+    cols2drop = []
+    for orig_col, (stored_col, factor, navalue, original_dtype) in factor_map.items():
         if stored_col in df.columns:
+            namask = (df[stored_col] == navalue)
             if factor == 1:
-                df[orig_col] = df[stored_col].astype(desired_dtype)
+                df[orig_col] = df[stored_col].astype(original_dtype)
             else:
-                vals = df[stored_col].astype("float64") / factor
-                if navalue != 0:
-                    vals = vals.replace(navalue / factor, np.nan)
-                df[orig_col] = vals.astype(desired_dtype)
-            df = df.drop(columns=[stored_col])
+                vals = (df[stored_col] / factor).astype(original_dtype)
+                try:
+                    vals[namask] = np.nan
+                except ValueError:
+                    vals[namask] = 0  # If original_dtype is not float64, set to 0
+                df[orig_col] = vals.astype(original_dtype)
+            cols2drop.append(stored_col)
+
+    df = df.drop(columns=cols2drop)
 
     # Decompress HEALPix coordinate columns using healpy
     hp_cols_processed = set()
