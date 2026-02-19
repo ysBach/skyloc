@@ -298,15 +298,19 @@ def _fetch_orb_sbdb(
             cols2kete=True,
         )
 
-        # Ensure boolean columns are actual bools (not object with str "False")
-        for col in ["two_body", "neo", "pha", "is_comet", "has_number"]:
-            if col in orb.columns and (orb[col].dtype == object or orb[col].dtype == str):
-                orb[col] = orb[col].astype(bool)
-
         # === Append new entries to the existing DataFrame
         orb = pd.concat([orb, new_orb], ignore_index=True).drop_duplicates(
             subset="desig", keep="last"
         )
+
+        # After concat, object-dtype boolean columns may contain mixed
+        # bool (True/False) and str ("True"/"False"/"T"/"Y") values.
+        # pd.Series.astype(bool) is WRONG here because bool("False") == True.
+        # Instead, map known truthy string representations explicitly.
+        _truthy = {True, "True", "T", "Y", "true", "t", "y", 1}
+        for col in ["two_body", "neo", "pha", "is_comet", "has_number"]:
+            if col in orb.columns and orb[col].dtype == object:
+                orb[col] = orb[col].isin(_truthy)
 
         # Save the updated DataFrame to the parquet file (overwriting the old one)
         orb.to_parquet(str(output), engine=engine, compression=compression)
