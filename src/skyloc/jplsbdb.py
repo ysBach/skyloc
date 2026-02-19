@@ -561,12 +561,11 @@ def sanitize_sbdb(orb, drop_unreliable=True, drop_impacted=True):
             )
     # soln_date len is for those shorter than "yyyy-mm-dd"; ex: "None"
     if drop_impacted:
-        if "pdes" not in orb.columns:
-            warn(
-                "Field 'pdes' unavailable - skipping drop_impacted",
-            )
+        if "pdes" not in orb.columns and "desig" not in orb.columns:
+            warn("Field 'pdes' unavailable - skipping drop_impacted")
         else:
-            _mask = orb["pdes"].isin(IMPACTED)
+            _col = "pdes" if "pdes" in orb.columns else "desig"
+            _mask = orb[_col].isin(IMPACTED)
             mask = _mask if mask is None else mask | _mask
 
     if mask is not None:
