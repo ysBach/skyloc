@@ -298,6 +298,11 @@ def _fetch_orb_sbdb(
             cols2kete=True,
         )
 
+        # Ensure boolean columns are actual bools (not object with str "False")
+        for col in ["two_body", "neo", "pha", "is_comet", "has_number"]:
+            if col in orb.columns and (orb[col].dtype == object or orb[col].dtype == str):
+                orb[col] = orb[col].astype(bool)
+
         # === Append new entries to the existing DataFrame
         orb = pd.concat([orb, new_orb], ignore_index=True).drop_duplicates(
             subset="desig", keep="last"

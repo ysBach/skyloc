@@ -487,6 +487,13 @@ def cols2bools_sbdb(
         else:
             warn(f"Failed to convert '{colname}' column to boolean: {exception}")
 
+    def _convert2bool(colname, true_value):
+        try:
+            if orb[colname].dtype == object or orb[colname].dtype == str:
+                orb[colname] = orb[colname] == true_value
+        except Exception as e:
+            _exception(colname, e)
+
     if kind2bools:
         try:
             _str = orb["kind"].str
@@ -497,23 +504,13 @@ def cols2bools_sbdb(
             _exception("kind", e)
 
     if neo2bool:
-        try:
-            orb["neo"] = orb["neo"] == "Y"
-        except Exception as e:
-            _exception("neo", e)
+        _convert2bool("neo", "Y")
 
     if pha2bool:
-        try:
-            orb["pha"] = orb["pha"] == "Y"
-        except Exception as e:
-            _exception("pha", e)
-            pass
+        _convert2bool("pha", "Y")
 
     if twobody2bool:
-        try:
-            orb["two_body"] = orb["two_body"] == "T"
-        except Exception as e:
-            _exception("two_body", e)
+        _convert2bool("two_body", "T")
 
     return orb
 
@@ -560,7 +557,7 @@ def sanitize_sbdb(orb, drop_unreliable=True, drop_impacted=True):
                 orb["prefix"].isin(["D", "X"])
                 | pd.isna(orb["soln_date"])
                 | (orb["soln_date"].str.len() < 10)
-                | ((orb["two_body"] is True) | (orb["two_body"] == "T"))
+                | ((orb["two_body"]) | (orb["two_body"] == "T"))
             )
     # soln_date len is for those shorter than "yyyy-mm-dd"; ex: "None"
     if drop_impacted:
