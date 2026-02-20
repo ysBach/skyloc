@@ -72,15 +72,25 @@ __all__ = [
 #   - sky_motion: ±0.5 mas/min precision, covers 0-65.535 "/min
 #   - sky_motion_pa: ±10" precision, covers -180 to +180 deg
 #   - vmag: ±0.25 mmag precision, covers 0-32.76 mag
+# EPH_DTYPES_BASE = {
+#     "alpha": (360, "uint16", 65535, "float64"),
+#     "r_hel": (1000, "uint16", 0, "float64"),
+#     "r_obs": (1000, "uint16", 0, "float64"),
+#     "racosdec_rate": (1000, "int16", 0, "float64"),
+#     "dec_rate": (1000, "int16", 0, "float64"),
+#     "sky_motion": (1000, "uint16", 0, "float64"),
+#     "sky_motion_pa": (180, "int16", 32767, "float64"),
+#     "vmag": (2000, "uint16", 0, "float64"),
+# }
 EPH_DTYPES_BASE = {
     "alpha": (360, "uint16", 65535, "float64"),
-    "r_hel": (1000, "uint16", 0, "float64"),
-    "r_obs": (1000, "uint16", 0, "float64"),
-    "racosdec_rate": (1000, "int16", 0, "float64"),
-    "dec_rate": (1000, "int16", 0, "float64"),
-    "sky_motion": (1000, "uint16", 0, "float64"),
+    "r_hel": (1, "float32", 0, "float64"),
+    "r_obs": (1, "float32", 0, "float64"),
+    "racosdec_rate": (1, "float32", 0, "float64"),
+    "dec_rate": (1, "float32", 0, "float64"),
+    "sky_motion": (1, "float32", 0, "float64"),
     "sky_motion_pa": (180, "int16", 32767, "float64"),
-    "vmag": (2000, "uint16", 0, "float64"),
+    "vmag": (1, "float32", 0, "float64"),
 }
 
 # Default coordinate column mapping: coord_name -> (lon_col, lat_col)
@@ -162,7 +172,14 @@ def compact_ephem_parq_cols(
             continue
 
         # Get dtype bounds
-        dtype_info = np.iinfo(storing_dtype)
+        dtype = np.dtype(storing_dtype)
+        if np.issubdtype(dtype, np.integer):
+            dtype_info = np.iinfo(dtype)
+        elif np.issubdtype(dtype, np.floating):
+            dtype_info = np.finfo(dtype)
+        else:
+            raise TypeError(f"Unsupported storing_dtype: {storing_dtype}")
+
         min_val, max_val = dtype_info.min, dtype_info.max
         col_data = _eph[col]
 
