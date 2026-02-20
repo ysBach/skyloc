@@ -71,6 +71,14 @@ def solspect_wlcut(
 
     update_global : bool, optional
         If `True`, update the global SOLSPECT variable. Default is `True`.
+
+    Notes
+    -----
+    Units are:
+
+      * Wavelength (`wl`): micrometers (um)
+      * Spectral flux density (`flam`): W / m^2 / um
+      * Spectral flux density (`fnu`): MJy
     """
     if update_global:
         global SOLSPECT
