@@ -81,13 +81,19 @@ def fetch_orb(
         The engine and compression to use for saving the parquet file
         (see `pandas.DataFrame.to_parquet` for details).
 
-    filters : list-like, optional
+    filters : str, list-like, or ExprNode, optional
         A list of filters to apply when reading the parquet file. This is
-        passed to `pandas.read_parquet`. If `None`, no filters are applied.
+        passed either to `pqfilt.read` (if a string or ExprNode) or natively
+        to `pandas.read_parquet` (if a list).
+
+        If string: Uses the `pqfilt` expression syntax.
+        Example: ``filters="kind in 'an','cn' & condition_code == 0"``
+
+        If list: Uses PyArrow/Pandas native filter syntax.
         Example: ``filters=[("kind", "in", ("an", "cn")), ("condition_code",
-        "==", "0")]`` to read only numbered asteroids and comets with the
-        highest quality orbits.
-        Default is `None`.
+        "==", "0")]``
+
+        If `None` (default), no filters are applied to read all data.
 
     strict_column_match : bool, optional
         (not matured yet) If `True`, when updating the existing parquet file,
@@ -155,10 +161,10 @@ def fetch_orb(
             strict_column_match=strict_column_match,
         )
         m_ng = (
-            (orb["A1"] != 0.0)
-            | (orb["A2"] != 0.0)
-            | (orb["A3"] != 0.0)
-            | (orb["DT"] != 0.0)
+            ((orb["A1"] != 0.0) & ~pd.isna(orb["A1"]))
+            | ((orb["A2"] != 0.0) & ~pd.isna(orb["A2"]))
+            | ((orb["A3"] != 0.0) & ~pd.isna(orb["A3"]))
+            | ((orb["DT"] != 0.0) & ~pd.isna(orb["DT"]))
         )
     else:
         raise ValueError(
@@ -316,7 +322,12 @@ def _fetch_orb_sbdb(
         orb.to_parquet(str(output), engine=engine, compression=compression)
 
     # Finally, read and return the DataFrame for consistency
-    orb = pd.read_parquet(str(output), engine=engine, filters=filters)
+    if isinstance(filters, str) or type(filters).__name__ in ("FilterExpr", "AndExpr", "OrExpr"):
+        import pqfilt
+        orb = pqfilt.read(str(output), filters=filters)
+    else:
+        # Backward compatible pyarrow filter list
+        orb = pd.read_parquet(str(output), engine=engine, filters=filters)
 
     # Convert the columns to the appropriate dtypes
     for col in float_cols:
