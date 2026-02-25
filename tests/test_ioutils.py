@@ -627,5 +627,83 @@ class TestLoadCompactParqEphem:
             load_compact_parq_ephem(fpath, EPH_DTYPES_BASE, filters=[("ra", ">", 100)])
 
 
+class TestParseCompactEphem:
+    """Tests for parse_compact_ephem (DataFrame-level decompression)."""
+
+    def test_round_trip_df(self):
+        """Compact then parse_compact_ephem recovers original values."""
+        from skyloc.ioutils.ephemeris import (
+            compact_ephem_parq_cols,
+            parse_compact_ephem,
+            EPH_DTYPES_BASE,
+        )
+
+        original = pd.DataFrame(
+            {
+                "alpha": [45.123, 90.456, 135.789],
+                "r_hel": [1.234, 2.567, 5.890],
+                "vmag": [10.001, 15.502, 20.003],
+                "ra": [180.0, 90.0, 270.0],
+                "dec": [0.0, 45.0, -30.0],
+            }
+        )
+
+        compacted = compact_ephem_parq_cols(original, EPH_DTYPES_BASE, nside=2**16)
+        recovered = parse_compact_ephem(compacted, dtypes=EPH_DTYPES_BASE)
+
+        for col in ["alpha", "r_hel", "vmag", "ra", "dec"]:
+            assert col in recovered.columns
+
+        np.testing.assert_array_almost_equal(
+            recovered["alpha"].values, original["alpha"].values, decimal=2
+        )
+        np.testing.assert_array_almost_equal(
+            recovered["r_hel"].values, original["r_hel"].values, decimal=2
+        )
+        np.testing.assert_array_almost_equal(
+            recovered["vmag"].values, original["vmag"].values, decimal=3
+        )
+        np.testing.assert_array_almost_equal(
+            recovered["ra"].values, original["ra"].values, decimal=1
+        )
+        np.testing.assert_array_almost_equal(
+            recovered["dec"].values, original["dec"].values, decimal=1
+        )
+
+    def test_columns_selection(self):
+        """parse_compact_ephem respects `columns` parameter."""
+        from skyloc.ioutils.ephemeris import (
+            compact_ephem_parq_cols,
+            parse_compact_ephem,
+            EPH_DTYPES_BASE,
+        )
+
+        original = pd.DataFrame(
+            {"alpha": [45.0, 90.0], "r_hel": [1.0, 2.0], "vmag": [10.0, 15.0]}
+        )
+        compacted = compact_ephem_parq_cols(original, EPH_DTYPES_BASE)
+        recovered = parse_compact_ephem(
+            compacted, dtypes=EPH_DTYPES_BASE, columns=["alpha"]
+        )
+
+        assert list(recovered.columns) == ["alpha"]
+
+    def test_does_not_mutate_input(self):
+        """parse_compact_ephem must not modify the input DataFrame."""
+        from skyloc.ioutils.ephemeris import (
+            compact_ephem_parq_cols,
+            parse_compact_ephem,
+            EPH_DTYPES_BASE,
+        )
+
+        original = pd.DataFrame({"alpha": [45.0, 90.0]})
+        compacted = compact_ephem_parq_cols(original, EPH_DTYPES_BASE)
+        cols_before = list(compacted.columns)
+
+        _ = parse_compact_ephem(compacted, dtypes=EPH_DTYPES_BASE)
+
+        assert list(compacted.columns) == cols_before
+
+
 # Import pandas for ephemeris tests
 import pandas as pd
