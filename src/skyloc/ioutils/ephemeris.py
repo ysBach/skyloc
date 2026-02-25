@@ -39,11 +39,15 @@ import numpy as np
 import pandas as pd
 import pyarrow.dataset as ds
 
-from ._filter_utils import apply_filter_operator, validate_operator
+from pqfilt._operators import apply_filter_operator, validate_operator
 
 __all__ = [
     "EPH_DTYPES_BASE",
+    "parse_hpcolname",
+    "coo2hpcol",
+    "hpcol2coo",
     "compact_ephem_parq_cols",
+    "parse_compact_ephem",
     "load_compact_parq_ephem",
     "filter_ephem",
 ]
@@ -99,6 +103,142 @@ DEFAULT_COORD_MAP = {
     "helecl": ("hel_ecl_lon", "hel_ecl_lat"),
     "obsecl": ("obs_ecl_lon", "obs_ecl_lat"),
 }
+
+
+def parse_hpcolname(colname: str) -> tuple[str, str, int] | None:
+    """Parse a HEALPix column name into its components.
+
+    Expected format: ``{coord_name}_hpidx_{ring|nested}_{nside_expr}``
+    where *nside_expr* is either a plain integer or ``base^exp``.
+
+    Parameters
+    ----------
+    colname : str
+        Column name to parse.
+
+    Returns
+    -------
+    tuple[str, str, int] or None
+        ``(coord_name, scheme, nside)`` if *colname* matches, else ``None``.
+    """
+    match = re.match(r"^(\w+)_hpidx_(ring|nested)_(.+)$", colname)
+    if not match:
+        return None
+    coord_name, scheme, nside_expr = match.groups()
+    if "^" in nside_expr:
+        base, exp = nside_expr.split("^")
+        nside = int(base) ** int(exp)
+    else:
+        nside = int(nside_expr)
+    return coord_name, scheme, nside
+
+
+def coo2hpcol(
+    df: pd.DataFrame,
+    coord_name: str,
+    lon_col: str,
+    lat_col: str,
+    nside: int,
+    scheme: str = "ring",
+) -> pd.DataFrame:
+    """Convert a lon/lat coordinate pair to a HEALPix index column.
+
+    Adds a column ``{coord_name}_hpidx_{scheme}_{nside_str}`` (uint64) and
+    drops the original *lon_col* and *lat_col*.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input DataFrame (modified in-place).
+    coord_name : str
+        Label for the coordinate system (e.g., ``'eqj2000'``).
+    lon_col, lat_col : str
+        Column names for longitude and latitude **in degrees**.
+    nside : int
+        HEALPix *nside* parameter.
+    scheme : str, optional
+        ``'ring'`` (default) or ``'nested'``.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with the HEALPix index column added and lon/lat dropped.
+    """
+    if lon_col not in df.columns or lat_col not in df.columns:
+        return df
+
+    lon_rad = np.deg2rad(df[lon_col].to_numpy())
+    lat_rad = np.deg2rad(df[lat_col].to_numpy())
+    theta = np.pi / 2 - lat_rad  # colatitude
+    hpidx = hp.ang2pix(nside, theta, lon_rad, nest=(scheme == "nested"))
+
+    # Build nside string (use exponent notation if power of 2)
+    log2_nside = np.log2(nside)
+    nside_str = f"2^{int(log2_nside)}" if log2_nside == int(log2_nside) else str(nside)
+
+    df[f"{coord_name}_hpidx_{scheme}_{nside_str}"] = hpidx.astype("uint64")
+    df.drop(columns=[lon_col, lat_col], inplace=True)
+    return df
+
+
+def hpcol2coo(
+    df: pd.DataFrame,
+    hp_col: str,
+    coord_name: str,
+    lon_col: str,
+    lat_col: str,
+    update_df: bool = True,
+) -> tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, pd.DataFrame]:
+    """Convert a HEALPix index column back to lon/lat coordinates.
+
+    The scheme and nside are parsed from the column name via
+    `parse_hpcolname`.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input DataFrame (modified in-place if ``update_df=True``).
+    hp_col : str
+        Name of the HEALPix index column.
+    coord_name : str
+        Label for the coordinate system (must match *hp_col*).
+    lon_col, lat_col : str
+        Output column names for longitude and latitude **in degrees**.
+    update_df : bool, optional
+        If ``True`` (default), also return *df* with
+        *lon_col*/*lat_col* added and *hp_col* dropped.
+
+    Returns
+    -------
+    lon_deg, lat_deg : np.ndarray
+        Longitude and latitude arrays in degrees.
+    df_out : pd.DataFrame
+        Returned **only** when ``update_df=True``.  Same as *df* with
+        coordinate columns added and HEALPix column dropped.
+
+    Raises
+    ------
+    ValueError
+        If *hp_col* cannot be parsed by `parse_hpcolname`.
+    """
+    parsed = parse_hpcolname(hp_col)
+    if parsed is None:
+        raise ValueError(f"Cannot parse HEALPix column name: '{hp_col}'")
+    _, scheme, nside = parsed
+
+    theta, phi = hp.pix2ang(
+        nside, df[hp_col].to_numpy().astype("int64"), nest=(scheme == "nested")
+    )
+    lon_deg = np.rad2deg(phi)
+    lat_deg = 90.0 - np.rad2deg(theta)
+
+    if not update_df:
+        return lon_deg, lat_deg
+
+    df[lon_col] = lon_deg
+    df[lat_col] = lat_deg
+    df.drop(columns=[hp_col], inplace=True)
+    return lon_deg, lat_deg, df
 
 
 def compact_ephem_parq_cols(
@@ -195,14 +335,6 @@ def compact_ephem_parq_cols(
         _eph = _eph.drop(columns=[col])
         _eph[f"{col}*{factor}"] = scaled.astype(storing_dtype)
 
-    # Build nside string for column name
-    # If nside is a power of 2, use exponent notation
-    log2_nside = np.log2(nside)
-    if log2_nside == int(log2_nside):
-        nside_str = f"2^{int(log2_nside)}"
-    else:
-        nside_str = str(nside)
-
     # Determine coordinate columns to convert
     if coord_cols is None:
         coord_cols = []
@@ -210,21 +342,118 @@ def compact_ephem_parq_cols(
             if lon_col in _eph.columns and lat_col in _eph.columns:
                 coord_cols.append((coord_name, lon_col, lat_col))
 
-    # Convert coordinates to HEALPix indices using healpy
-    # healpy uses (theta, phi) in radians where theta=colatitude (0 at N. pole)
-    nest = scheme == "nested"
+    # Convert coordinates to HEALPix indices
     for coord_name, lon_col, lat_col in coord_cols:
-        if lon_col not in _eph.columns or lat_col not in _eph.columns:
-            continue
-        lon_rad = np.deg2rad(_eph[lon_col].to_numpy())
-        lat_rad = np.deg2rad(_eph[lat_col].to_numpy())
-        theta = np.pi / 2 - lat_rad  # colatitude = 90° - latitude
-        hpidx = hp.ang2pix(nside, theta, lon_rad, nest=nest)
-        _eph[f"{coord_name}_hpidx_{scheme}_{nside_str}"] = hpidx.astype("uint64")
-        # Drop original columns
-        _eph = _eph.drop(columns=[lon_col, lat_col])
+        _eph = coo2hpcol(_eph, coord_name, lon_col, lat_col, nside, scheme)
 
     return _eph
+
+
+def parse_compact_ephem(
+    df: pd.DataFrame,
+    dtypes: dict | None = None,
+    coord_map: dict | None = None,
+    columns: list[str] | None = None,
+) -> pd.DataFrame:
+    """Decompress a compacted ephemeris DataFrame.
+
+    This reverses the transformation applied by `compact_ephem_parq_cols`
+    on an already-loaded DataFrame:
+
+    - Divides factored columns by their factors to recover original values.
+    - Converts HEALPix index columns back to lon/lat coordinates.
+
+    Use this when you already have a compacted DataFrame in memory (e.g.,
+    read via ``pd.read_parquet`` or obtained from another source). For
+    loading directly from a Parquet *file*, use `load_compact_parq_ephem`.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Compacted ephemeris DataFrame with factored columns (named
+        ``'{col}*{factor}'``) and/or HEALPix index columns (named
+        ``'{coord}_hpidx_{scheme}_{nside_expr}'``).
+
+    dtypes : dict, optional
+        Dictionary mapping original column names to
+        ``(factor, stored_dtype, navalue, original_dtype)``.
+        Must match the dtypes used during compaction.
+        If None, uses `EPH_DTYPES_BASE`.
+
+    coord_map : dict, optional
+        Mapping from ``coord_name`` to ``(lon_col, lat_col)``.
+        If None, uses `DEFAULT_COORD_MAP`.
+
+    columns : list of str, optional
+        Columns to keep in output. Use original names (e.g., ``'alpha'``,
+        ``'ra'``). If None, all decompressed columns are returned.
+
+    Returns
+    -------
+    pd.DataFrame
+        Decompressed ephemeris DataFrame with original column names.
+
+    Notes
+    -----
+    HEALPix parameters (scheme and nside) are automatically parsed from
+    column names. Expected format:
+    ``{coord_name}_hpidx_{ring|nested}_{nside_expr}``
+    """
+    if coord_map is None:
+        coord_map = DEFAULT_COORD_MAP
+
+    if dtypes is None:
+        dtypes = EPH_DTYPES_BASE
+    elif not isinstance(dtypes, dict):
+        raise TypeError(
+            "dtypes must be a dict mapping column names to "
+            "(factor<numeric>, stored_dtype, navalue<numeric>, original_dtype)"
+        )
+
+    # Build mapping from original col -> (stored_col, factor, navalue, original_dtype)
+    factor_map = {
+        col: (f"{col}*{factor}", factor, navalue, original_dtype)
+        for col, (factor, _, navalue, original_dtype) in dtypes.items()
+    }
+
+    df = df.copy()
+
+    # Auto-detect HEALPix columns
+    hp_col_info = {}
+    for col in df.columns:
+        if (parsed := parse_hpcolname(col)):
+            hp_col_info[col] = parsed
+
+    # Decompress factored columns
+    cols2drop = []
+    for orig_col, (stored_col, factor, navalue, original_dtype) in factor_map.items():
+        if stored_col in df.columns:
+            namask = df[stored_col] == navalue
+            if factor == 1:
+                df[orig_col] = df[stored_col].astype(original_dtype)
+            else:
+                vals = (df[stored_col] / factor).astype(original_dtype)
+                try:
+                    vals[namask] = np.nan
+                except ValueError:
+                    vals[namask] = 0  # If original_dtype is not float64, set to 0
+                df[orig_col] = vals.astype(original_dtype)
+            cols2drop.append(stored_col)
+
+    df = df.drop(columns=cols2drop)
+
+    # Decompress HEALPix coordinate columns
+    for hp_col, (coord_name, _scheme, _nside) in hp_col_info.items():
+        if hp_col in df.columns and coord_name in coord_map:
+            lon_col, lat_col = coord_map[coord_name]
+            _, _, df = hpcol2coo(df, hp_col, coord_name, lon_col, lat_col)
+
+    # Reorder columns if user requested specific ones
+    if columns is not None:
+        available = [c for c in columns if c in df.columns]
+        df = df[available]
+
+    return df.reset_index(drop=True)
 
 
 def load_compact_parq_ephem(
@@ -342,20 +571,6 @@ def load_compact_parq_ephem(
         validate_operator(op)
         return apply_filter_operator(op, ds.field(col), val)
 
-    def _parse_healpix_col(colname):
-        """Parse HEALPix column name to extract coord_name, scheme, nside."""
-        pattern = r"^(\w+)_hpidx_(ring|nested)_(.+)$"
-        match = re.match(pattern, colname)
-        if not match:
-            return None
-        coord_name, scheme, nside_expr = match.groups()
-        if "^" in nside_expr:
-            base, exp = nside_expr.split("^")
-            nside = int(base) ** int(exp)
-        else:
-            nside = int(nside_expr)
-        return coord_name, scheme, nside
-
     # Normalize filters to DNF (list of lists)
     pre_filter_groups = []
     if filters:
@@ -373,7 +588,7 @@ def load_compact_parq_ephem(
     # Auto-detect HEALPix columns
     hp_col_info = {}
     for col in all_stored_cols:
-        if (parsed := _parse_healpix_col(col)):
+        if (parsed := parse_hpcolname(col)):
             hp_col_info[col] = parsed
 
     # Build reverse map: original_col -> hp_col
@@ -417,49 +632,8 @@ def load_compact_parq_ephem(
     table = dataset.to_table(columns=load_stored_cols, filter=pa_filter)
     df = table.to_pandas()
 
-    # Decompress factored columns
-    cols2drop = []
-    for orig_col, (stored_col, factor, navalue, original_dtype) in factor_map.items():
-        if stored_col in df.columns:
-            namask = (df[stored_col] == navalue)
-            if factor == 1:
-                df[orig_col] = df[stored_col].astype(original_dtype)
-            else:
-                vals = (df[stored_col] / factor).astype(original_dtype)
-                try:
-                    vals[namask] = np.nan
-                except ValueError:
-                    vals[namask] = 0  # If original_dtype is not float64, set to 0
-                df[orig_col] = vals.astype(original_dtype)
-            cols2drop.append(stored_col)
-
-    df = df.drop(columns=cols2drop)
-
-    # Decompress HEALPix coordinate columns using healpy
-    hp_cols_processed = set()
-    for hp_col, (coord_name, scheme, nside) in hp_col_info.items():
-        if hp_col in df.columns and hp_col not in hp_cols_processed:
-            nest = scheme == "nested"
-            theta, phi = hp.pix2ang(
-                nside, df[hp_col].to_numpy().astype("int64"), nest=nest
-            )
-            lon_deg = np.rad2deg(phi)
-            lat_deg = 90.0 - np.rad2deg(theta)  # latitude = 90° - colatitude
-
-            if coord_name in coord_map:
-                lon_col, lat_col = coord_map[coord_name]
-                df[lon_col] = lon_deg
-                df[lat_col] = lat_deg
-
-            df = df.drop(columns=[hp_col])
-            hp_cols_processed.add(hp_col)
-
-    # Reorder columns if user requested specific ones
-    if columns is not None:
-        available = [c for c in columns if c in df.columns]
-        df = df[available]
-
-    return df.reset_index(drop=True)
+    # Delegate decompression to parse_compact_ephem
+    return parse_compact_ephem(df, dtypes=dtypes, coord_map=coord_map, columns=columns)
 
 
 def filter_ephem(
