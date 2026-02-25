@@ -1,99 +1,101 @@
-"""Filter ephemeris CLI tool."""
+"""Filter ephemeris CLI tool.
+
+Uses ``pqfilt`` expression syntax for generic filter parsing,
+then delegates to :func:`~skyloc.ioutils.ephemeris.filter_ephem`
+for domain-specific decompression and filtering.
+"""
 
 import sys
 
 import click
 
-from ..ioutils.ephemeris import filter_ephem, EPH_DTYPES_BASE
-from ..ioutils._filter_utils import to_numeric_if_possible
+from ..ioutils.ephemeris import filter_ephem
+from pqfilt._parser import parse_expression, FilterExpr, AndExpr, OrExpr
 
 
-STRING_COLUMNS = ["desig"]
+def _ast_to_filter_kwargs(node):
+    """Convert a parsed pqfilt AST to filter_ephem **kwargs.
 
+    Only flat AND of FilterExpr nodes can be converted to kwargs.
+    For complex OR expressions, raises an error directing the user
+    to use the Python API.
 
-def parse_filter_value(ctx, param, value):
-    """Click callback to parse filter value string.
+    Parameters
+    ----------
+    node : FilterExpr, AndExpr, or OrExpr
+        Parsed expression from pqfilt.
 
-    Supports:
-    - Comparison: ">30", "<=180", "==5"
-    - Comma-separated for 'in': "1,2,3"
-    - Plain values for equality
+    Returns
+    -------
+    dict
+        Keyword arguments for ``filter_ephem()``.
+
+    Raises
+    ------
+    ValueError
+        If the expression contains OR logic (not supported by filter_ephem kwargs).
     """
-    if value is None:
-        return None
+    if isinstance(node, FilterExpr):
+        return {node.col: (node.op, node.val)}
 
-    value_str = value.strip()
+    if isinstance(node, AndExpr):
+        kwargs = {}
+        for child in node.children:
+            if isinstance(child, FilterExpr):
+                kwargs[child.col] = (child.op, child.val)
+            else:
+                raise ValueError(
+                    "filter-ephem CLI only supports AND-combined simple filters. "
+                    "For OR logic, use the Python API: "
+                    "filter_ephem(files, ...) with pqfilt expressions."
+                )
+        return kwargs
 
-    # Determine if we should convert to numeric
-    # param.name corresponds to the option name (e.g., 'desig')
-    convert = True
-    if param and param.name in STRING_COLUMNS:
-        convert = False
+    if isinstance(node, OrExpr):
+        raise ValueError(
+            "filter-ephem CLI does not support OR expressions. "
+            "For OR logic, use the Python API."
+        )
 
-    converter = to_numeric_if_possible if convert else lambda x: x
-
-    for op in [">=", "<=", "!=", "==", ">", "<"]:
-        if value_str.startswith(op):
-            val_part = value_str[len(op) :].strip()
-            return (op, converter(val_part))
-
-    if "," in value_str:
-        parts = [p.strip() for p in value_str.split(",")]
-        values = [converter(p) for p in parts]
-        return ("in", values)
-
-    return converter(value_str)
-
-
-KNOWN_FILTER_COLUMNS = list(EPH_DTYPES_BASE.keys()) + [
-    "desig",
-    "jd",
-    "ra",
-    "dec",
-    "hel_ecl_lon",
-    "hel_ecl_lat",
-    "obs_ecl_lon",
-    "obs_ecl_lat",
-]
-
-COLUMN_TO_OPTION = {}
-for col in KNOWN_FILTER_COLUMNS:
-    option_name = col.replace("*", "_").replace("/", "_")
-    COLUMN_TO_OPTION[option_name] = col
+    raise TypeError(f"Unexpected node type: {type(node)}")
 
 
 @click.command(name="filter-ephem")
 @click.argument("files", nargs=-1, required=True, type=click.Path(exists=False))
 @click.option(
-    "-o", "--output", required=True, type=click.Path(), help="Output file path (parquet or csv)"
+    "-f",
+    "--filter",
+    "filter_exprs",
+    multiple=True,
+    help=(
+        'Filter expression, e.g. "vmag < 20", "desig in 1,2,3". '
+        "Multiple -f flags are AND-ed together."
+    ),
+)
+@click.option(
+    "-o", "--output", required=True, type=click.Path(),
+    help="Output file path (.parquet or .csv)",
 )
 @click.option("--overwrite", is_flag=True, help="Overwrite output file if it exists")
 @click.option("--columns", help="Comma-separated list of columns to include in output")
 @click.option(
-    "--filter-per-file/--no-filter-per-file",
+    "--per-file/--no-per-file",
     default=True,
     help="Filter each file separately (default) vs load all first",
 )
-def filter_ephem_cli(
-    files, output, overwrite, columns, filter_per_file, **filter_kwargs
-):
+def filter_ephem_cli(files, filter_exprs, output, overwrite, columns, per_file):
     """Filter ephemeris parquet files (output to .parq or .csv).
 
-    FILES: Parquet files or glob patterns to filter
+    FILES: Parquet files or glob patterns to filter.
 
-    Examples:
+    Uses pqfilt expression syntax for filters.
 
-      # Filter by magnitude
-      filter-ephem data/*.parquet --vmag "<20" -o filtered.parquet
+    Examples::
 
-      # Filter by designation (multiple values)
-      filter-ephem data/*.parquet --desig "1,2,3" -o filtered.parquet
-
-      # Multiple filters
-      filter-ephem data/*.parquet --vmag "<20" --dec ">30" -o filtered.parquet
-
-      # Select specific columns
-      filter-ephem data/*.parquet --vmag "<20" --columns desig,ra,dec,vmag -o out.parquet
+        filter-ephem data/*.parquet -f "vmag < 20" -o filtered.parquet
+        filter-ephem data/*.parquet -f "vmag < 20" -f "dec > 30" -o out.parquet
+        filter-ephem data/*.parquet -f "desig in 1,2,3" -o filtered.parquet
+        filter-ephem data/*.parquet -f "vmag < 20" --columns desig,ra,dec,vmag -o out.parquet
     """
     columns_list = None
     if columns:
@@ -101,23 +103,32 @@ def filter_ephem_cli(
 
     filelist = files[0] if len(files) == 1 else list(files)
 
-    filter_kwargs_actual = {}
-    for opt_name, col_name in COLUMN_TO_OPTION.items():
-        if opt_name in filter_kwargs and filter_kwargs[opt_name] is not None:
-            filter_kwargs_actual[col_name] = filter_kwargs[opt_name]
+    # Parse and combine filter expressions (AND)
+    filter_kwargs = {}
+    if filter_exprs:
+        if len(filter_exprs) == 1:
+            combined = filter_exprs[0]
+        else:
+            combined = " & ".join(f"({expr})" for expr in filter_exprs)
+
+        try:
+            ast = parse_expression(combined)
+            filter_kwargs = _ast_to_filter_kwargs(ast)
+        except ValueError as e:
+            click.echo(f"Filter error: {e}", err=True)
+            sys.exit(1)
 
     try:
         result = filter_ephem(
             filelist=filelist,
-            filter_per_file=filter_per_file,
+            filter_per_file=per_file,
             output=output,
             overwrite=overwrite,
             columns=columns_list,
-            **filter_kwargs_actual,
+            **filter_kwargs,
         )
 
-        click.echo(f"Filtered {len(result)} rows from input files")
-        click.echo(f"Output saved to: {output}")
+        click.echo(f"Filtered {len(result)} rows -> {output}", err=True)
 
     except FileNotFoundError as e:
         click.echo(f"Error: {e}", err=True)
@@ -128,14 +139,6 @@ def filter_ephem_cli(
     except Exception as e:
         click.echo(f"Error filtering ephemeris: {e}", err=True)
         sys.exit(1)
-
-
-for opt_name, col_name in COLUMN_TO_OPTION.items():
-    filter_ephem_cli = click.option(
-        f"--{opt_name}",
-        callback=parse_filter_value,
-        help=f'Filter {col_name} (e.g., ">30", "1,2,3")',
-    )(filter_ephem_cli)
 
 
 if __name__ == "__main__":
