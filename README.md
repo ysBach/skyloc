@@ -23,8 +23,7 @@
 <!-- [INSERT SCREENSHOT OF YOUR SOFTWARE, IF APPLICABLE] -->
 <!-- ☝️ Screenshot of your software (if applicable) via ![](https://uri-to-your-screenshot) ☝️ -->
 
-This project is heavily dependent on [kete](https://github.com/Caltech-IPAC/kete/tree/main#) and SPICE toolkits.
-<!-- ☝️ Replace with a more detailed description of your repository, including why it was made and whom its intended for.  ☝️ -->
+This project provides both kete-dependent and kete-independent features. Many utility functions can be used without installing [kete](https://github.com/Caltech-IPAC/kete/tree/main#).
 
 Initially motivated by NASA's SPHEREx mission (and NEO Surveyor mission - kete).
 
@@ -33,28 +32,59 @@ Initially motivated by NASA's SPHEREx mission (and NEO Surveyor mission - kete).
 [Website](INSERT WEBSITE LINK HERE) | [Docs/Wiki](INSERT DOCS/WIKI SITE LINK HERE) | [Discussion Board](INSERT DISCUSSION BOARD LINK HERE) | [Issue Tracker](INSERT ISSUE TRACKER LINK HERE)
 -->
 
-## Features
-This is a collection of convenience tools for "finding objects in the FOV" or "Finding FOVs that contain certain object(s)", and main functionality is dependent heavily on [kete](https://github.com/Caltech-IPAC/kete/tree/main#).
+## Installation
 
-* **SSO Orbital Elements**
+### Basic Installation (without kete)
+
+To install `skyloc` without the large Rust-based `kete` dependency:
+
+```bash
+pip install skyloc
+```
+
+This provides access to utility functions, SPICE tools, and other features that don't require kete.
+
+### Full Installation (with kete)
+
+For full functionality including FOV analysis and SSO propagation:
+
+```bash
+pip install skyloc[kete]
+```
+
+Or install kete separately:
+
+```bash
+pip install "kete>=1.0.8,<2.0"
+```
+
+**Important Notes**:
+- This requires **kete version 1.x** from [Caltech IPAC](https://github.com/Caltech-IPAC/kete), NOT the original "kete" package. This is unfortunately due to historic reasons.
+- Installing `kete` requires Rust compilation which can take significant time and disk space
+- Version constraint: `>=1.0.8, <2.0.0`
+
+## Features
+
+* **SSO Orbital Elements** (no kete required)
   - Query and manage SSO orbital elements from SBDB (Small-Body Database)
   - Convenient file management for orbital element data
 
-* **JPL Horizons Integration**
+* **JPL Horizons Integration** (no kete required for most features)
   - Download and manage DE (Development Ephemeris) files
   - Query vectors and ephemeris data using `astroquery`
 
-* **SPICE toolkits**
+* **SPICE toolkits** (no kete required)
   - Some convenience tools for SPICE toolkits (such as meta kernel generations)
 
-* **Field of View (FOV) Analysis**
+* **Field of View (FOV) Analysis** (requires kete)
   - Check which FOVs contain specific sidereal sky locations and/or SSOs (similar to [kete](https://github.com/Caltech-IPAC/kete/tree/main#))
   - Easy-to-use interface for FOVs (`FOVCollection` class)
 
-* **SSO Position and Motion**
+* **SSO Position and Motion** (requires kete)
   - Calculate apparent positions and movements of SSOs (uses [kete](https://github.com/Caltech-IPAC/kete/tree/main#))
   - Compute SSO magnitudes and phase angles
   - Additional ephemeris-related convenience tools
+
 
 ## Code Style
 
