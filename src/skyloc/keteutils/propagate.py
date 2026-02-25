@@ -150,21 +150,27 @@ def make_nongravs_models(
         if len(m_ng) != nobj:
             raise ValueError(f"{len(m_ng)=} does not match number of objects {nobj}")
 
-    def _set_nongrav_col(df, colname, value):
-        """Set the column in the orbit DataFrame to the value."""
-        if colname in orb.columns:
-            # If scalar value
-            df[colname] = df[colname].fillna(value)
-        else:  # If the column does not exist in the DataFrame,
-            # Fill with scalar or array value
-            df[colname] = value
-
     orb_ng = orb.loc[m_ng].copy()
+
+    # Sanitize nongrav numeric columns. Missing/invalid values are treated as
+    # "not provided" and default to zero to avoid constructing models with NaN.
+    # This is especially important for DT, because dt=NaN can propagate as an
+    # error and then become NaN states when suppress_errors=True.
+    for col in [c_a1, c_a2, c_a3, c_dt]:
+        if col in orb_ng.columns:
+            orb_ng[col] = pd.to_numeric(orb_ng[col], errors="coerce").fillna(0.0)
+        else:
+            orb_ng[col] = 0.0
+
     for col, val in zip(
         [c_alpha, c_r0, c_m, c_n, c_k],
         [alpha, r_0, m, n, k],
     ):
-        _set_nongrav_col(orb_ng, col, val)
+        if col in orb_ng.columns:  # If scalar value
+            orb_ng[col] = orb_ng[col].fillna(val)
+        else:  # If the column does not exist in the DataFrame,
+            # Fill with scalar or array value
+            orb_ng[col] = val
 
     non_gravs = np.array([None] * nobj)
 
