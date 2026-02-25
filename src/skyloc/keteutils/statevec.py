@@ -27,23 +27,37 @@ def make_kete_state(
     jd_tdb : float or `kete.Time`
         The time of the state in TDB jd time, see `kete.Time`.
 
-    pos_au, vel_aupd : array_like
+    pos_au, vel_aupd : array_like or `kete.Vector`
         Position and velocity of the object in au and au/day, respectively,
         with respect to the center (`center_id`).
+        Can be either numeric arrays or existing `kete.Vector` objects.
+        If `kete.Vector` objects are provided, their existing frames are used
+        and `pos_frame`/`vel_frame` parameters are ignored for those inputs.
 
-    pos_frame, vel_frame : `kete.Frames`, str, optional
-        The frame of the position and velocity, by default
-        `kete.Frames.Ecliptic`.
+    pos_frame, vel_frame : `kete.Frames`, str, or None, optional
+        The frame of the position and velocity. Default is None, which uses
+        `kete.Frames.Ecliptic`. Only used when `pos_au`/`vel_aupd` are numeric
+        arrays (not `kete.Vector` objects).
     """
-    if pos_frame is None:
-        pos_frame = kete.Frames.Ecliptic
-    if vel_frame is None:
-        vel_frame = kete.Frames.Ecliptic
+    if isinstance(pos_au, kete.Vector):
+        pos = pos_au
+    else:
+        if pos_frame is None:
+            pos_frame = kete.Frames.Ecliptic
+        pos = kete.Vector(pos_au, frame=parse_frame(pos_frame))
+
+    if isinstance(vel_aupd, kete.Vector):
+        vel = vel_aupd
+    else:
+        if vel_frame is None:
+            vel_frame = kete.Frames.Ecliptic
+        vel = kete.Vector(vel_aupd, frame=parse_frame(vel_frame))
+
     return kete.State(
         desig=state_desig,
         jd=jd_tdb,
-        pos=kete.Vector(pos_au, frame=parse_frame(pos_frame)),
-        vel=kete.Vector(vel_aupd, frame=parse_frame(vel_frame)),
+        pos=pos,
+        vel=vel,
         center_id=center_id,
     )
 
@@ -76,9 +90,12 @@ def make_kete_states(
         If this is array-like, this function will create a list of `kete.State`
         objects.
 
-    pos_au, vel_aupd : array_like
+    pos_au, vel_aupd : array_like or `kete.Vector`
         Position and velocity of the object in au and au/day, respectively,
         with respect to the center (`center_id`).
+        Can be either numeric arrays or existing `kete.Vector` objects.
+        If `kete.Vector` objects are provided, their existing frames are used
+        and `pos_frame`/`vel_frame` parameters are ignored for those inputs.
         If `jd_tdb` is array-like, these should also be array-like with
         the same length as `jd_tdb` along the first axis (i.e.,
         `pos_au.shape[0]` must match `jd_tdb.shape[0]`).
@@ -87,9 +104,10 @@ def make_kete_states(
         The NAIF ID of the center of the state. Default is `399` (Earth).
         If array-like, it should have the same length as `jd_tdb`.
 
-    pos_frame, vel_frame : `kete.Frames`, array-like of such, optional
-        The frame of the position and velocity, by default
-        `kete.Frames.Ecliptic`.
+    pos_frame, vel_frame : `kete.Frames`, str, None, or array-like of such, optional
+        The frame of the position and velocity. Default is None, which uses
+        `kete.Frames.Ecliptic`. Only used when `pos_au`/`vel_aupd` are numeric
+        arrays (not `kete.Vector` objects).
         If array-like, it should have the same length as `jd_tdb`.
 
     """
@@ -103,11 +121,21 @@ def make_kete_states(
         vel_frame = kete.Frames.Ecliptic
 
     if np.size(jd_tdb) == 1:
+        if isinstance(pos_au, kete.Vector):
+            pos = pos_au
+        else:
+            pos = kete.Vector(pos_au, frame=parse_frame(pos_frame))
+
+        if isinstance(vel_aupd, kete.Vector):
+            vel = vel_aupd
+        else:
+            vel = kete.Vector(vel_aupd, frame=parse_frame(vel_frame))
+
         return kete.State(
             desig=state_desig,
             jd=jd_tdb,
-            pos=kete.Vector(pos_au, frame=parse_frame(pos_frame)),
-            vel=kete.Vector(vel_aupd, frame=parse_frame(vel_frame)),
+            pos=pos,
+            vel=vel,
             center_id=center_id,
         )
 
@@ -155,12 +183,22 @@ def make_kete_states(
     for _jd, _pos, _vel, _cen, _pf, _vf in zip(
         jd_tdb, pos_au, vel_aupd, center_id, pos_frame, vel_frame
     ):
+        if isinstance(_pos, kete.Vector):
+            pos = _pos
+        else:
+            pos = kete.Vector(_pos, frame=_pf)
+
+        if isinstance(_vel, kete.Vector):
+            vel = _vel
+        else:
+            vel = kete.Vector(_vel, frame=_vf)
+
         states.append(
             kete.State(
                 desig=state_desig,
                 jd=_jd,
-                pos=kete.Vector(_pos, frame=_pf),
-                vel=kete.Vector(_vel, frame=_vf),
+                pos=pos,
+                vel=vel,
                 center_id=_cen,
             )
         )
