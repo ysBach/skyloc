@@ -441,7 +441,7 @@ def horizons_quick(
     epochs,
     depochs=HORIZONS_DEPOCHS,
     location="500",
-    in_tdb=True,
+    in_tdb=False,
     auto_choose_recordnum=False,
     **kwargs,
 ):
@@ -452,20 +452,38 @@ def horizons_quick(
     objid : str
         The object ID to be queried.
 
-    epochs : list-like
-        The epochs to be queried.
+    epochs : list-like or dict
+        The epochs to be queried. Can be:
+
+        - **list-like**: A sequence of JD values.
+        - **dict**: A range specification with keys ``'start'``, ``'stop'``,
+          and ``'step'``, e.g.,
+          ``{'start': '2025-01-01', 'stop': '2026-01-01', 'step': '1d'}``.
+          When a dict is provided, chunking (``depochs``) is bypassed and
+          the dict is passed directly to
+          `~astroquery.jplhorizons.Horizons`.
 
     depochs : int, optional
         Number of epochs in a chunk to use for the query. This is necessary
         to avoid "too long URI" errors when `epochs` is a large list.
+        Ignored when `epochs` is a dict.
         Default is `HORIZONS_DEPOCHS`.
 
     location : str, optional
         The location of the observer. Default is ``"500"``.
 
     in_tdb : bool, optional
-        If `True`, the input epochs are in TDB. Default is `True`.
-        If `False`, the input epochs are in UTC.
+        If `True`, the input epochs are in TDB.
+        If `False`` (default), the input epochs are in **UTC**.
+
+        .. note::
+           The default is ``False`` (UTC). If your epochs are
+           in TDB (e.g., JD values from kete), set ``in_tdb=True``
+           explicitly.
+
+        For dict epochs with ``in_tdb=True``, the ``'start'`` and ``'stop'``
+        values are parsed as TDB and converted to UTC ISO strings before
+        querying.
 
     auto_choose_recordnum : bool, optional
         If `True` and the query returns ambiguous results (e.g., for comets with
@@ -480,42 +498,31 @@ def horizons_quick(
     """
     from astroquery.jplhorizons import Horizons
 
-    if in_tdb:
-        epochs = tdb2utc(epochs).jd
-
-    eph = []
-
-    for i in range(0, len(epochs), depochs):
-        _epochs = epochs[i : i + depochs]
-        obj = Horizons(id=objid, location=location, epochs=_epochs)
+    def _query_ephemerides(obj):
+        """Run ephemerides query with optional ambiguity resolution."""
         try:
-            _eph = obj.ephemerides(
+            return obj.ephemerides(
                 extra_precision=True,
                 quantities=",".join(map(str, range(1, 49))),
                 **kwargs,
             )
         except ValueError as e:
             if not auto_choose_recordnum:
-                raise e
+                raise
 
             msg = str(e)
             if "Ambiguous target name" not in msg:
-                raise e
+                raise
 
             logger.warning(
                 f"Ambiguous target name for '{objid}'. "
                 "Attempting to resolve by choosing the most recent record..."
             )
 
-            # Simple parsing of the error message table
-            # The table usually starts after "provide unique id:\n"
             lines = msg.splitlines()
             records = []
             for line in lines:
                 parts = line.split()
-                # Check if the line likely contains data:
-                # Record # (integer), Epoch-yr (integer), etc.
-                # Example: 90000033    1805    2P             2P              Encke
                 if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
                     rec_num = int(parts[0])
                     epoch_yr = int(parts[1])
@@ -525,9 +532,8 @@ def horizons_quick(
                 logger.error(
                     "Could not parse ambiguous record list from error message."
                 )
-                raise e
+                raise
 
-            # Sort by Epoch-yr (descending), then Record # (descending)
             records.sort(key=lambda x: (x[0], x[1]), reverse=True)
             best_rec = records[0]
             new_id = best_rec[2]
@@ -537,16 +543,34 @@ def horizons_quick(
                 f"Selected Record #{new_id} (Epoch-yr {best_rec[0]})"
             )
 
-            # Retry with new ID
-            obj = Horizons(id=new_id, location=location, epochs=_epochs)
-            _eph = obj.ephemerides(
+            new_obj = Horizons(id=new_id, location=location, epochs=obj.epochs)
+            return new_obj.ephemerides(
                 extra_precision=True,
                 quantities=",".join(map(str, range(1, 49))),
                 **kwargs,
             )
 
-        eph.append(_eph)
-    eph = vstack(eph)
+    if isinstance(epochs, dict):
+        # Range-based query: {'start': ..., 'stop': ..., 'step': ...}
+        if in_tdb:
+            epochs = dict(epochs)  # copy to avoid mutating caller's dict
+            epochs["start"] = tdb2utc(epochs["start"]).iso
+            epochs["stop"] = tdb2utc(epochs["stop"]).iso
+
+        obj = Horizons(id=objid, location=location, epochs=epochs)
+        eph = _query_ephemerides(obj)
+    else:
+        # List-based JDs
+        if in_tdb:
+            epochs = tdb2utc(epochs).jd
+
+        eph = []
+        for i in range(0, len(epochs), depochs):
+            _epochs = epochs[i : i + depochs]
+            obj = Horizons(id=objid, location=location, epochs=_epochs)
+            eph.append(_query_ephemerides(obj))
+        eph = vstack(eph)
+
     colmaps = {
         "datetime_jd": "jd_utc",
         "RA": "ra",
