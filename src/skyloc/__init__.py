@@ -18,6 +18,7 @@ from .configs import *
 from .logging import set_log_level
 
 from . import spicetools
+from . import plotutils
 
 try:
     from .keteutils._kete_import import KETE_AVAILABLE
