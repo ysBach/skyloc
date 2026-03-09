@@ -32,16 +32,23 @@ dependencies = [
     "healpy",
     "pyarrow",
     "click",
+    "pqfilt",
 ]
 
 [project.optional-dependencies]
 kete = [
     "kete >=1.0.8, <2.0.0",  # skyloc depends on Caltech IPAC version
 ]
+full = [
+    "kete >=1.0.8, <2.0.0",
+    "plotly",
+]
 
 
 [project.scripts]
 filter-ephem = "skyloc.cli.filter_ephem:filter_ephem_cli"
+query-horizons = "skyloc.cli.query_horizons:query_horizons_cli"
+ephem2plotly = "skyloc.cli.plot_ephem:ephem2plotly_cli"
 
 
 [tool.setuptools_scm]
