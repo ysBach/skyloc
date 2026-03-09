@@ -230,6 +230,8 @@ def horizons_vector(
         Aberrations to be accounted for.
         Ignored if `obsid` and `location` are available as loaded SPK **and**
         `try_spice` is `True` (result must be corresponding to ``'geometric'``).
+        Use ``"astrometric"`` to include light-time correction and thus to compare
+        kete results against Horizons.
         Default is ``'geometric'``.
 
     refplane : {'ecliptic', 'earth', 'body'}, optional
