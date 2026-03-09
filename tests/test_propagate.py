@@ -213,6 +213,7 @@ class TestHorizonsKeteCrossValidation:
             objid="15",
             epochs=[sample_jd_tdb],
             location="500",  # Geocentric
+            in_tdb=True,
         )
         return eph.iloc[0]
 
