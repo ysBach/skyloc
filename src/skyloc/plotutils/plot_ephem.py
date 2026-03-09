@@ -32,10 +32,14 @@ def plot_ephemeris_plotly(
     use_webgl=True,
     show_xgrid=True,
     xgrid_month_step=6,
+    domain_left=0.0,
     domain_right=0.78,
+    left_positions=None,
     right_positions=(0.82, 0.89, 0.96),
+    left_margin=80,
     right_margin=40,
     tickfont_size=14,
+    legend_fontsize=12,
     title_standoff=8,
     fig_width=1200,
     fig_height=800,
@@ -69,6 +73,11 @@ def plot_ephemeris_plotly(
         - ``required``: if ``True``, raise when all requested columns are
           missing or non-finite.
         - ``invert``: invert this axis (equivalent to reversed autorange).
+        - ``initially_hidden``: if ``True``, traces start as ``legendonly``.
+          Can be a single bool (applies to all traces) or a per-column
+          sequence of bools.  The axis itself is hidden only when **all** its
+          traces are initially hidden.  Users can re-enable them via the
+          interactive HTML controls.
 
         Example
         -------
@@ -119,17 +128,41 @@ def plot_ephemeris_plotly(
     xgrid_month_step : int or None, optional
         Month interval used for x-axis major ticks when ``show_xgrid=True``.
         Passed as Plotly ``dtick="M{step}"`` when not ``None``.
+    domain_left : float, optional
+        Left edge of the x-axis domain in paper coordinates (default ``0.0``,
+        clamped to ``[0.0, 0.3]``). Extra left-side y-axis positions are
+        clamped to ``<= max(domain_left - 0.02, 0)``; with the default of
+        ``0.0`` this means all auto-positioned left axes collapse to
+        position ``0.0``. Set ``domain_left`` to e.g. ``0.12`` when using
+        extra left axes so that positions have room.
     domain_right : float, optional
-        Right edge of the x-axis domain in paper coordinates. This leaves room
-        for overlaid right-side y-axes.
+        Right edge of the x-axis domain in paper coordinates (default
+        ``0.78``, clamped to ``[0.2, 0.92]`` when right axes exist). Extra
+        right-side y-axis positions are clamped to
+        ``>= min(domain_right + 0.02, 0.99)``.
+    left_positions : sequence of float or None, optional
+        Preferred positions for extra left-side y-axes (overlay axes with
+        ``side="left"`` other than the primary). Values are clamped to
+        ``<= max(domain_left - 0.02, 0)`` and enforced to have at least
+        ``0.03`` spacing between neighbours.  If there are more left axes
+        than entries, subsequent positions are auto-generated at ``-0.07``
+        intervals.  Explicit ``position`` in an axis config overrides this
+        but is still subject to clamping.
     right_positions : sequence of float, optional
-        Preferred positions for right-side y-axes in paper coordinates. If
-        there are more right-side axes than values, additional positions are
-        auto-generated with spacing safeguards.
+        Preferred positions for right-side y-axes in paper coordinates.
+        Values are clamped to ``>= min(domain_right + 0.02, 0.99)`` and
+        enforced to have at least ``0.03`` spacing.  If there are more
+        right axes than entries, subsequent positions are auto-generated at
+        ``+0.07`` intervals.  Explicit ``position`` in an axis config
+        overrides this but is still subject to clamping.
+    left_margin : int, optional
+        Left layout margin in pixels.
     right_margin : int, optional
         Right layout margin in pixels.
     tickfont_size : int, optional
         Tick label font size for x/y axes.
+    legend_fontsize : int, optional
+        Legend text font size (default ``12``).
     title_standoff : int, optional
         Y-axis title standoff in pixels.
     fig_width : int, optional
@@ -265,7 +298,7 @@ def plot_ephemeris_plotly(
 
     def _default_hover(trace_name, unit_text):
         suffix = f" {unit_text}" if unit_text else ""
-        return f"t=%{{x}}<br>{trace_name}=%{{y:.3f}}{suffix}<extra></extra>"
+        return f"{trace_name}=%{{y:.3f}}{suffix}<extra></extra>"
 
     def _normalize_axis_config(axis_name, raw_cfg):
         if not isinstance(raw_cfg, Mapping):
@@ -309,6 +342,11 @@ def plot_ephemeris_plotly(
         axis_invert = bool(raw_cfg.get("invert", False))
 
         n_cols = len(cols)
+        hidden_full = _broadcast(
+            _pick(raw_cfg, "initially_hidden", default=None),
+            n_cols,
+            False,
+        )
         names_full = _broadcast(
             _pick(raw_cfg, "names", "trace_names", default=None),
             n_cols,
@@ -366,6 +404,7 @@ def plot_ephemeris_plotly(
                     width=float(widths_full[idx]),
                     dash=str(dashes_full[idx]),
                     hovertemplate=str(hovertemplate),
+                    initially_hidden=bool(hidden_full[idx]),
                 )
             )
 
@@ -511,6 +550,7 @@ def plot_ephemeris_plotly(
             layer=layer,
             xref=xref,
             yref=yref,
+            initially_hidden=bool(raw_cfg.get("initially_hidden", False)),
             bands=valid_bands,
         )
 
@@ -640,8 +680,10 @@ def plot_ephemeris_plotly(
         axis["layout_key"] = "yaxis" if i == 0 else f"yaxis{i + 1}"
 
     right_axes = [axis for axis in active_axes[1:] if axis["side"] == "right"]
+    left_axes = [axis for axis in active_axes[1:] if axis["side"] == "left"]
     max_domain_right = 0.92 if right_axes else 1.0
     domain_right = float(min(max(domain_right, 0.2), max_domain_right))
+    domain_left = float(max(min(domain_left, 0.3), 0.0))
 
     raw_right_positions = [
         float(p) for p in _as_tuple(right_positions) if p is not None
@@ -666,19 +708,41 @@ def plot_ephemeris_plotly(
         axis["position"] = pos
         prev_right_pos = pos
 
-    for axis in active_axes[1:]:
-        if axis["side"] == "left" and axis["position"] is None:
-            axis["position"] = 0.0
+    # Position extra left-side axes
+    raw_left_positions = [
+        float(p) for p in _as_tuple(left_positions) if p is not None
+    ] if left_positions is not None else []
+    max_left_pos = max(domain_left - 0.02, 0.0)
+    prev_left_pos = max_left_pos + 0.03
+    for i, axis in enumerate(left_axes):
+        if axis["position"] is not None:
+            pos = float(axis["position"])
+        elif i < len(raw_left_positions):
+            pos = raw_left_positions[i]
+        elif raw_left_positions:
+            pos = raw_left_positions[-1] - 0.07 * (i - len(raw_left_positions) + 1)
+        else:
+            pos = max_left_pos - 0.07 * i
+
+        pos = float(min(max(pos, 0.0), 1.0))
+        if pos > max_left_pos:
+            pos = max_left_pos
+        if pos >= prev_left_pos - 0.03:
+            pos = max(prev_left_pos - 0.07, 0.0)
+        axis["position"] = pos
+        prev_left_pos = pos
 
     fig = go.Figure()
     for axis in active_axes:
         for trace_cfg in axis["traces"]:
+            trace_vis = "legendonly" if trace_cfg["initially_hidden"] else True
             fig.add_trace(
                 Trace(
                     x=t,
                     y=_get_y(trace_cfg["col"]),
                     mode="lines",
                     name=trace_cfg["name"],
+                    visible=trace_vis,
                     line=dict(
                         color=trace_cfg["color"],
                         width=trace_cfg["width"],
@@ -774,7 +838,7 @@ def plot_ephemeris_plotly(
 
     xaxis = dict(
         title="Time",
-        domain=[0.0, domain_right],
+        domain=[domain_left, domain_right],
         showspikes=True,
         spikemode="across",
         spikesnap="cursor",
@@ -790,6 +854,16 @@ def plot_ephemeris_plotly(
         showgrid=bool(show_xgrid),
         gridcolor="rgba(0,0,0,0.08)",
         gridwidth=1,
+        tickformatstops=[
+            dict(dtickrange=[None, 1000], value="%H:%M:%S.%L\n%Y-%m-%d"),
+            dict(dtickrange=[1000, 60000], value="%H:%M:%S\n%Y-%m-%d"),
+            dict(dtickrange=[60000, 86400000], value="%H:%M\n%Y-%m-%d"),
+            dict(dtickrange=[86400000, 2592000000], value="%Y-%m-%d"),
+            dict(dtickrange=[2592000000, 31536000000], value="%Y-%m"),
+            dict(dtickrange=[31536000000, None], value="%Y"),
+        ],
+        hoverformat="%Y-%m-%d %H:%M",
+        tickangle=-45,
     )
     if show_xgrid and (xgrid_month_step is not None):
         xaxis["dtick"] = f"M{xgrid_month_step}"
@@ -810,10 +884,11 @@ def plot_ephemeris_plotly(
             y=1.02,
             xanchor="left",
             x=0,
+            font=dict(size=legend_fontsize),
             itemclick="toggle",
             itemdoubleclick="toggleothers",
         ),
-        margin=dict(l=80, r=right_margin, t=60, b=60),
+        margin=dict(l=left_margin, r=right_margin, t=60, b=60),
         xaxis=xaxis,
     )
 
@@ -833,6 +908,10 @@ def plot_ephemeris_plotly(
             title_standoff=title_standoff,
             **common,
         )
+
+        all_hidden = all(tc["initially_hidden"] for tc in axis["traces"])
+        if all_hidden:
+            axis_layout["visible"] = False
 
         if i > 0:
             axis_layout.update(
@@ -856,6 +935,72 @@ def plot_ephemeris_plotly(
         else:
             layout_axis.autorange = "reversed"
 
+    # Embed shade metadata + column data for interactive HTML controls
+    shade_col_data = {}
+    shade_band_meta = []
+    for shade_cfg in normalized_shades:
+        for band in shade_cfg["bands"]:
+            col = band["col"]
+            if col not in shade_col_data:
+                vals = _get_y(col)
+                shade_col_data[col] = [
+                    float(v) if np.isfinite(v) else None for v in vals
+                ]
+            shade_band_meta.append(
+                dict(
+                    col=band["col"],
+                    low=band["low"],
+                    high=band["high"],
+                    fillcolor=band["fillcolor"],
+                    opacity=band["opacity"],
+                    line_width=band["line_width"],
+                    line_color=band["line_color"],
+                    y0=band["y0"],
+                    y1=band["y1"],
+                    hatch=band["hatch"],
+                    hatch_color=band["hatch_color"],
+                    hatch_width=band["hatch_width"],
+                    hatch_step=band["hatch_step"],
+                    hatch_opacity=band["hatch_opacity"],
+                    layer=shade_cfg["layer"],
+                    xref=shade_cfg["xref"],
+                    yref=shade_cfg["yref"],
+                    key=shade_cfg["key"],
+                    initially_hidden=shade_cfg["initially_hidden"],
+                )
+            )
+
+    t_ns = [int(v) for v in np.array(t, dtype="datetime64[ns]").astype("int64")]
+
+    all_numeric_cols = []
+    _iter_cols = (
+        dataframe.columns
+        if hasattr(dataframe, "columns")
+        else dataframe.keys()
+    )
+    for cname in _iter_cols:
+        try:
+            arr = np.asarray(dataframe[cname], dtype=float)
+            if np.isfinite(arr).any():
+                all_numeric_cols.append(str(cname))
+                if cname not in shade_col_data:
+                    shade_col_data[cname] = [
+                        float(v) if np.isfinite(v) else None for v in arr
+                    ]
+        except (TypeError, ValueError):
+            continue
+
+    existing_meta = fig.layout.meta if fig.layout.meta is not None else {}
+    if not isinstance(existing_meta, dict):
+        existing_meta = {}
+    existing_meta["ephem_shade_data"] = dict(
+        bands=shade_band_meta,
+        columns=shade_col_data,
+        column_names=all_numeric_cols,
+        time_ns=t_ns,
+    )
+    fig.update_layout(meta=existing_meta)
+
     if output_html is not None:
         save_plotly_html(fig, output_html)
 
@@ -871,6 +1016,7 @@ def save_plotly_html(
     add_trace_controls=True,
     add_axis_controls=True,
     add_layout_controls=True,
+    add_shade_controls=True,
 ):
     """
     Save Plotly figure as standalone HTML with optional interactive controls.
@@ -894,6 +1040,10 @@ def save_plotly_html(
     add_axis_controls : bool, optional
         Include per-y-axis controls (visibility, grid toggle, position,
         range/autorange).
+    add_shade_controls : bool, optional
+        Include per-shade-band controls (enabled, column, range, fill
+        color, opacity, hatch pattern). Requires that shade metadata was
+        embedded by ``plot_ephemeris_plotly``.
     add_layout_controls : bool, optional
         Include layout-level controls (legend font size, axis font size,
         x-axis grid toggle).
@@ -911,7 +1061,7 @@ def save_plotly_html(
     _require_plotly()
     path = Path(path)
 
-    if not add_trace_controls and not add_axis_controls and not add_layout_controls:
+    if not add_trace_controls and not add_axis_controls and not add_layout_controls and not add_shade_controls:
         fig.write_html(
             path,
             include_plotlyjs=(True if standalone else "cdn"),
@@ -973,6 +1123,15 @@ def save_plotly_html(
 
     layout = fig_json.get("layout", {})
     meta = layout.get("meta", {}) if isinstance(layout, Mapping) else {}
+
+    # Extract shade data for interactive shade controls
+    shade_data = {}
+    if isinstance(meta, Mapping):
+        shade_data = meta.get("ephem_shade_data", {})
+    shade_bands_js = shade_data.get("bands", []) if isinstance(shade_data, Mapping) else []
+    shade_columns_js = shade_data.get("columns", {}) if isinstance(shade_data, Mapping) else {}
+    shade_col_names_js = shade_data.get("column_names", []) if isinstance(shade_data, Mapping) else []
+    shade_time_ns_js = shade_data.get("time_ns", []) if isinstance(shade_data, Mapping) else []
     raw_axis_meta = []
     if isinstance(meta, Mapping):
         raw_axis_meta = meta.get("ephem_axis_controls", [])
@@ -1059,7 +1218,7 @@ def save_plotly_html(
 
     axis_controls.sort(key=lambda item: _axis_sort_key(item["axis_id"]))
 
-    legend_font_size = 12
+    legend_font_size = 14
     label_font_size = 14
     if isinstance(layout, Mapping):
         legend = layout.get("legend", {})
@@ -1129,7 +1288,7 @@ def save_plotly_html(
   }}
   .controls {{
     width: 380px;
-    min-width: 380px;
+    min-width: 320px;
     max-height: 95vh;
     overflow-y: auto;
     border: 1px solid #ccc;
@@ -1138,57 +1297,114 @@ def save_plotly_html(
     box-sizing: border-box;
     background: #fafafa;
   }}
-  .plot {{
+  .plot-wrapper {{
     flex: 1;
     min-width: 0;
+    position: relative;
+  }}
+  .resize-handle {{
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 18px;
+    height: 18px;
+    cursor: nwse-resize;
+    background: linear-gradient(135deg, transparent 50%, #aaa 50%, #aaa 55%, transparent 55%, transparent 70%, #aaa 70%, #aaa 75%, transparent 75%);
+    z-index: 10;
+    border-radius: 0 0 4px 0;
   }}
   .trace-block {{
     border: 1px solid #ddd;
     border-radius: 6px;
-    padding: 10px;
-    margin-bottom: 10px;
+    padding: 8px;
+    margin-bottom: 6px;
     background: white;
   }}
   .axis-block {{
     border: 1px solid #bbb;
     border-radius: 6px;
-    padding: 8px;
-    margin-bottom: 8px;
+    padding: 6px 8px;
+    margin-bottom: 6px;
     background: white;
   }}
   .trace-title {{
     font-weight: bold;
-    margin-bottom: 8px;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }}
   .row {{
     display: flex;
     align-items: center;
     gap: 8px;
-    margin: 6px 0;
+    margin: 4px 0;
   }}
   .row label {{
-    min-width: 75px;
-    font-size: 14px;
+    min-width: 70px;
+    font-size: 13px;
   }}
+  .inline-row {{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 3px 0;
+    flex-wrap: wrap;
+  }}
+  .inline-row label {{
+    font-size: 13px;
+    white-space: nowrap;
+  }}
+  .compact-row {{
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: 3px 0;
+  }}
+  .compact-row input[type="color"] {{ width: 28px; height: 24px; padding: 0; border: 1px solid #ccc; }}
+  .compact-row input[type="number"] {{ width: 52px; }}
+  .compact-row select {{ max-width: 90px; }}
   select, input[type="color"], input[type="number"], input[type="text"] {{
     flex: 1;
   }}
   .small {{
     font-size: 12px;
     color: #666;
-    margin-bottom: 10px;
+    margin-bottom: 6px;
+  }}
+  details > summary {{
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: bold;
+    padding: 4px 0;
+    user-select: none;
+  }}
+  details {{ margin-bottom: 8px; }}
+  .splitter {{
+    width: 6px;
+    cursor: col-resize;
+    background: #ddd;
+    border-radius: 3px;
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }}
+  .splitter:hover, .splitter.active {{
+    background: #999;
   }}
 </style>
 </head>
 <body>
 <div class="container">
   <div class="controls">
-    {"<h3 style='margin-top:0;'>Layout</h3><div class='small'>Adjust legend and label font sizes.</div><div id='layout-controls'></div>" if add_layout_controls else ""}
-    {"<h3 style='margin-top:16px;'>Axes</h3><div class='small'>Toggle y-axes, y-grid, move positions, and tune ranges.</div><div id='axis-controls'></div>" if add_axis_controls else ""}
-    {"<h3 style='margin-top:16px;'>Traces</h3><div class='small'>Toggle visibility and edit legend name / color / width / dash.</div><div id='trace-controls'></div>" if add_trace_controls else ""}
+    {"<details open><summary>Layout</summary><div class='small'>Adjust legend and label font sizes.</div><div id='layout-controls'></div></details>" if add_layout_controls else ""}
+    {"<details open><summary>Axes</summary><div class='small'>Toggle y-axes, y-grid, positions, ranges.</div><div id='axis-controls'></div></details>" if add_axis_controls else ""}
+    {"<details><summary>Traces</summary><div class='small'>Visibility, color, width, dash.</div><div id='trace-controls'></div></details>" if add_trace_controls else ""}
+    {"<details><summary>Shades</summary><div class='small'>Toggle shading, column, range, color, opacity, hatch.</div><div id='shade-controls'></div></details>" if add_shade_controls else ""}
   </div>
-  <div class="plot">
+  <div class="splitter" id="sidebar-splitter"></div>
+  <div class="plot-wrapper">
     {plot_html}
+    <div class="resize-handle" id="resize-handle"></div>
   </div>
 </div>
 
@@ -1200,8 +1416,13 @@ const PLOT_ID = "{div_id}";
 const ADD_TRACE_CONTROLS = {str(bool(add_trace_controls)).lower()};
 const ADD_AXIS_CONTROLS = {str(bool(add_axis_controls)).lower()};
 const ADD_LAYOUT_CONTROLS = {str(bool(add_layout_controls)).lower()};
+const ADD_SHADE_CONTROLS = {str(bool(add_shade_controls)).lower()};
 const DEFAULT_LEGEND_FONT_SIZE = {json.dumps(legend_font_size)};
 const DEFAULT_LABEL_FONT_SIZE = {json.dumps(label_font_size)};
+const SHADE_BANDS = {json.dumps(shade_bands_js)};
+const SHADE_COLUMNS = {json.dumps(shade_columns_js)};
+const SHADE_COL_NAMES = {json.dumps(shade_col_names_js)};
+const SHADE_TIME_NS = {json.dumps(shade_time_ns_js)};
 
 function restyleTrace(i, prop, val) {{
   const plot = document.getElementById(PLOT_ID);
@@ -1388,6 +1609,42 @@ function buildLayoutControls() {{
     setXGrid(xGridInput.checked);
   }});
   div.appendChild(makeControlRow("x grid", xGridInput));
+
+  // Time format dropdown
+  const ISO_STOPS = [
+    {{dtickrange: [null, 1000], value: "%H:%M:%S.%L\\n%Y-%m-%d"}},
+    {{dtickrange: [1000, 60000], value: "%H:%M:%S\\n%Y-%m-%d"}},
+    {{dtickrange: [60000, 86400000], value: "%H:%M\\n%Y-%m-%d"}},
+    {{dtickrange: [86400000, 2592000000], value: "%Y-%m-%d"}},
+    {{dtickrange: [2592000000, 31536000000], value: "%Y-%m"}},
+    {{dtickrange: [31536000000, null], value: "%Y"}},
+  ];
+  const DISABLED_STOPS = ISO_STOPS.map(s => ({{...s, enabled: false}}));
+  const timeFmtSelect = document.createElement("select");
+  [
+    ["ISO auto", "__iso_auto__"],
+    ["Plotly auto", "__plotly__"],
+    ["%Y-%m-%d", "%Y-%m-%d"],
+    ["%d %b %Y", "%d %b %Y"],
+    ["%b %Y", "%b %Y"],
+  ].forEach(([label, fmt]) => {{
+    const opt = document.createElement("option");
+    opt.value = fmt;
+    opt.textContent = label;
+    if (fmt === "__iso_auto__") opt.selected = true;
+    timeFmtSelect.appendChild(opt);
+  }});
+  timeFmtSelect.addEventListener("change", () => {{
+    const val = timeFmtSelect.value;
+    if (val === "__iso_auto__") {{
+      relayout({{"xaxis.tickformat": null, "xaxis.tickformatstops": ISO_STOPS, "xaxis.hoverformat": "%Y-%m-%d %H:%M"}});
+    }} else if (val === "__plotly__") {{
+      relayout({{"xaxis.tickformat": null, "xaxis.tickformatstops": DISABLED_STOPS, "xaxis.hoverformat": "%Y-%m-%d %H:%M"}});
+    }} else {{
+      relayout({{"xaxis.tickformat": val, "xaxis.tickformatstops": DISABLED_STOPS, "xaxis.hoverformat": val}});
+    }}
+  }});
+  div.appendChild(makeControlRow("time fmt", timeFmtSelect));
 }}
 
 function buildAxisControls() {{
@@ -1444,30 +1701,46 @@ function buildAxisControls() {{
       maxInput.value = axis.range_max;
     }}
 
+    const resetBtn = document.createElement("button");
+    resetBtn.textContent = "auto range";
+    resetBtn.style.cssText = "font-size:12px; padding:1px 8px; cursor:pointer;";
+    resetBtn.addEventListener("click", () => {{
+      setAxisAutorange(axis.axis_id, true);
+      // Read back the auto-computed range after a short delay
+      setTimeout(() => {{
+        const plot = document.getElementById(PLOT_ID);
+        const layoutAxis = plot.layout[axis.layout_key];
+        if (layoutAxis && layoutAxis.range) {{
+          minInput.value = layoutAxis.range[0];
+          maxInput.value = layoutAxis.range[1];
+        }}
+      }}, 100);
+    }});
+
     const updateRange = () => {{
       setAxisRange(axis.axis_id, minInput.value, maxInput.value);
-      autoInput.checked = false;
     }};
     minInput.addEventListener("change", updateRange);
     maxInput.addEventListener("change", updateRange);
     block.appendChild(makeControlRow("range min", minInput));
     block.appendChild(makeControlRow("range max", maxInput));
 
-    const autoInput = document.createElement("input");
-    autoInput.type = "checkbox";
-    autoInput.checked = !!axis.autorange;
-    autoInput.addEventListener("change", () => {{
-      setAxisAutorange(axis.axis_id, autoInput.checked);
-    }});
-    block.appendChild(makeControlRow("autorange", autoInput));
-
+    // reset + y-grid on one line
     const gridInput = document.createElement("input");
     gridInput.type = "checkbox";
     gridInput.checked = !!axis.showgrid;
     gridInput.addEventListener("change", () => {{
       setAxisGrid(axis.axis_id, gridInput.checked);
     }});
-    block.appendChild(makeControlRow("y grid", gridInput));
+
+    const inlineRow = document.createElement("div");
+    inlineRow.className = "inline-row";
+    inlineRow.appendChild(resetBtn);
+    const gridLabel = document.createElement("label");
+    gridLabel.textContent = "grid";
+    inlineRow.appendChild(gridInput);
+    inlineRow.appendChild(gridLabel);
+    block.appendChild(inlineRow);
 
     div.appendChild(block);
   }});
@@ -1483,10 +1756,23 @@ function buildTraceControls() {{
     const block = document.createElement("div");
     block.className = "trace-block";
 
-    const title = document.createElement("div");
-    title.className = "trace-title";
-    title.textContent = t.name;
-    block.appendChild(title);
+    // Title row: checkbox + name
+    const titleRow = document.createElement("div");
+    titleRow.className = "trace-title";
+
+    const visibleInput = document.createElement("input");
+    visibleInput.type = "checkbox";
+    visibleInput.checked = !!t.visible;
+    visibleInput.addEventListener("change", () => {{
+      restyleTrace(t.index, "visible", visibleInput.checked);
+    }});
+    titleRow.appendChild(visibleInput);
+
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = t.name;
+    titleRow.appendChild(nameSpan);
+
+    block.appendChild(titleRow);
 
     // legend name
     const nameInput = document.createElement("input");
@@ -1494,30 +1780,23 @@ function buildTraceControls() {{
     nameInput.value = t.name;
     nameInput.addEventListener("input", () => {{
       t.name = nameInput.value;
-      title.textContent = nameInput.value;
+      nameSpan.textContent = nameInput.value;
       restyleTrace(t.index, "name", nameInput.value);
     }});
-    block.appendChild(makeControlRow("legend name", nameInput));
+    block.appendChild(makeControlRow("name", nameInput));
 
-    // visible
-    const visibleInput = document.createElement("input");
-    visibleInput.type = "checkbox";
-    visibleInput.checked = !!t.visible;
-    visibleInput.addEventListener("change", () => {{
-      restyleTrace(t.index, "visible", visibleInput.checked);
-    }});
-    block.appendChild(makeControlRow("visible", visibleInput));
+    // Compact row: color + width + dash
+    const compactRow = document.createElement("div");
+    compactRow.className = "compact-row";
 
-    // color
     const colorInput = document.createElement("input");
     colorInput.type = "color";
     colorInput.value = normalizeColor(t.color);
     colorInput.addEventListener("input", () => {{
       restyleTrace(t.index, "line.color", colorInput.value);
     }});
-    block.appendChild(makeControlRow("color", colorInput));
+    compactRow.appendChild(colorInput);
 
-    // width
     const widthInput = document.createElement("input");
     widthInput.type = "number";
     widthInput.min = "0.5";
@@ -1530,9 +1809,8 @@ function buildTraceControls() {{
         restyleTrace(t.index, "line.width", v);
       }}
     }});
-    block.appendChild(makeControlRow("width", widthInput));
+    compactRow.appendChild(widthInput);
 
-    // dash
     const dashInput = document.createElement("select");
     ["solid", "dot", "dash", "longdash", "dashdot", "longdashdot"].forEach(v => {{
       const opt = document.createElement("option");
@@ -1544,7 +1822,271 @@ function buildTraceControls() {{
     dashInput.addEventListener("change", () => {{
       restyleTrace(t.index, "line.dash", dashInput.value);
     }});
-    block.appendChild(makeControlRow("dash", dashInput));
+    compactRow.appendChild(dashInput);
+
+    block.appendChild(compactRow);
+
+    container.appendChild(block);
+  }});
+}}
+
+// ---- Shade Controls ----
+
+// Count non-shade shapes so we can preserve them during recomputation.
+// Shade shapes are the last N shapes in the initial layout.
+let NON_SHADE_SHAPE_COUNT = 0;
+(function countNonShadeShapes() {{
+  const plot = document.getElementById(PLOT_ID);
+  if (!plot || !plot.layout || !plot.layout.shapes) return;
+  // All shapes were created by the Python code;
+  // we need to know how many are shade vs non-shade.
+  // Since the Python code only generates shade shapes, NON_SHADE = 0.
+  // But if the user added extra shapes, we track the total.
+  const totalShapes = plot.layout.shapes.length;
+  // shade shapes = shapes generated from SHADE_BANDS; count them
+  let shadeShapeCount = 0;
+  SHADE_BANDS.forEach(band => {{
+    const col = SHADE_COLUMNS[band.col];
+    if (!col) return;
+    // count intervals
+    let inInterval = false;
+    let intervals = 0;
+    for (let i = 0; i < col.length; i++) {{
+      const v = col[i];
+      const inRange = (v !== null && v >= band.low && v <= band.high);
+      if (inRange && !inInterval) {{
+        inInterval = true;
+        intervals++;
+      }} else if (!inRange) {{
+        inInterval = false;
+      }}
+    }}
+    shadeShapeCount += intervals;  // one rect per interval
+    // hatch shapes: not counted individually here; we regenerate everything
+  }});
+  // Approximate: non-shade = total - everything from shades
+  // Since hatch shapes are hard to count exactly, just mark all as shade
+  NON_SHADE_SHAPE_COUNT = 0;
+}})();
+
+function computeShadeShapes() {{
+  const shapes = [];
+  SHADE_BANDS.forEach(band => {{
+    if (band._disabled) return;
+    const col = SHADE_COLUMNS[band.col];
+    if (!col || col.length === 0) return;
+
+    // Find contiguous intervals where value is in [low, high]
+    const intervals = [];
+    let start = -1;
+    for (let i = 0; i < col.length; i++) {{
+      const v = col[i];
+      const inRange = (v !== null && v >= band.low && v <= band.high);
+      if (inRange && start < 0) {{
+        start = i;
+      }} else if (!inRange && start >= 0) {{
+        intervals.push([start, i - 1]);
+        start = -1;
+      }}
+    }}
+    if (start >= 0) intervals.push([start, col.length - 1]);
+
+    intervals.forEach(([s, e]) => {{
+      if (s >= SHADE_TIME_NS.length || e >= SHADE_TIME_NS.length) return;
+      const x0ms = SHADE_TIME_NS[s] / 1e6;
+      const x1ms = SHADE_TIME_NS[e] / 1e6;
+      function msToISO(ms) {{ return new Date(ms).toISOString(); }}
+      const x0 = msToISO(x0ms);
+      const x1 = msToISO(x1ms);
+
+      const lineDict = {{width: band.line_width || 0}};
+      if (band.line_color) lineDict.color = band.line_color;
+
+      const rect = {{
+        type: "rect",
+        xref: band.xref || "x",
+        yref: band.yref || "paper",
+        x0: x0,
+        x1: x1,
+        y0: band.y0 !== undefined ? band.y0 : 0,
+        y1: band.y1 !== undefined ? band.y1 : 1,
+        fillcolor: band.fillcolor || "rgba(128,128,128,0.18)",
+        line: lineDict,
+        layer: band.layer || "below",
+      }};
+      if (band.opacity !== null && band.opacity !== undefined) {{
+        rect.opacity = band.opacity;
+      }}
+      shapes.push(rect);
+
+      // Generate hatch lines if specified
+      const hatchPattern = (band.hatch || "").trim().toLowerCase();
+      if (hatchPattern && hatchPattern !== "none" && hatchPattern !== "off") {{
+        const step = Math.min(Math.max(band.hatch_step || 0.08, 0.01), 0.5);
+        const hColor = band.hatch_color || band.line_color || "rgba(80,80,80,0.45)";
+        const hWidth = Math.max(band.hatch_width || 1, 0.1);
+        const hOpacity = band.hatch_opacity;
+        const y0h = band.y0 !== undefined ? band.y0 : 0;
+        const y1h = band.y1 !== undefined ? band.y1 : 1;
+
+        const BACKSLASH = String.fromCharCode(92);
+        const addVert = ["|" ,"v", "vertical", "+", "grid"].includes(hatchPattern);
+        const addHorz = ["-", "h", "horizontal", "+", "grid"].includes(hatchPattern);
+        const addDiagUp = ["/", "diag", "diag_up", "x"].includes(hatchPattern);
+        const addDiagDown = [BACKSLASH, "diag_down", "x"].includes(hatchPattern);
+
+
+        const fracs = [];
+        for (let f = 0; f <= 1.0 + step * 0.5; f += step) fracs.push(f);
+
+        function xAt(frac) {{
+          return msToISO(x0ms + frac * (x1ms - x0ms));
+        }}
+        function mkLine(xa, ya, xb, yb) {{
+          const ln = {{
+            type: "line", xref: band.xref || "x", yref: band.yref || "paper",
+            x0: xa, y0: ya, x1: xb, y1: yb,
+            line: {{color: hColor, width: hWidth}},
+            layer: band.layer || "below",
+          }};
+          if (hOpacity !== null && hOpacity !== undefined) ln.opacity = hOpacity;
+          return ln;
+        }}
+
+        if (addVert) fracs.forEach(f => shapes.push(mkLine(xAt(f), y0h, xAt(f), y1h)));
+        if (addHorz) fracs.forEach(f => {{
+          const y = y0h + f * (y1h - y0h);
+          shapes.push(mkLine(x0, y, x1, y));
+        }});
+
+        if (addDiagUp || addDiagDown) {{
+          const dOffsets = [];
+          for (let d = -1.0; d <= 1.0 + step * 0.5; d += step) dOffsets.push(d);
+          if (addDiagUp) dOffsets.forEach(d => {{
+            const f0 = Math.max(0, d), f1 = Math.min(1, 1 + d);
+            shapes.push(mkLine(xAt(f0), y0h, xAt(f1), y1h));
+          }});
+          if (addDiagDown) dOffsets.forEach(d => {{
+            const f0 = Math.max(0, d), f1 = Math.min(1, 1 + d);
+            shapes.push(mkLine(xAt(f0), y1h, xAt(f1), y0h));
+          }});
+        }}
+      }}
+    }});
+  }});
+  return shapes;
+}}
+
+function refreshShades() {{
+  const shapes = computeShadeShapes();
+  relayout({{shapes: shapes}});
+}}
+
+function buildShadeControls() {{
+  if (!ADD_SHADE_CONTROLS) return;
+  const container = document.getElementById("shade-controls");
+  if (!container) return;
+  if (SHADE_BANDS.length === 0) {{
+    container.innerHTML = "<div class='small'>No shade bands configured.</div>";
+    return;
+  }}
+
+  SHADE_BANDS.forEach((band, idx) => {{
+    band._disabled = !!band.initially_hidden;
+    const block = document.createElement("div");
+    block.className = "trace-block";
+
+    const title = document.createElement("div");
+    title.className = "trace-title";
+    title.textContent = (band.key || "shade") + " / " + band.col;
+    block.appendChild(title);
+
+    // Enabled checkbox
+    const enabledInput = document.createElement("input");
+    enabledInput.type = "checkbox";
+    enabledInput.checked = !band._disabled;
+    enabledInput.addEventListener("change", () => {{
+      band._disabled = !enabledInput.checked;
+      refreshShades();
+    }});
+    block.appendChild(makeControlRow("enabled", enabledInput));
+
+    // Column dropdown
+    const colSelect = document.createElement("select");
+    SHADE_COL_NAMES.forEach(cn => {{
+      const opt = document.createElement("option");
+      opt.value = cn;
+      opt.textContent = cn;
+      if (cn === band.col) opt.selected = true;
+      colSelect.appendChild(opt);
+    }});
+    colSelect.addEventListener("change", () => {{
+      band.col = colSelect.value;
+      title.textContent = (band.key || "shade") + " / " + band.col;
+      refreshShades();
+    }});
+    block.appendChild(makeControlRow("column", colSelect));
+
+    // Range min
+    const rMinInput = document.createElement("input");
+    rMinInput.type = "number";
+    rMinInput.step = "any";
+    rMinInput.value = band.low;
+    rMinInput.addEventListener("change", () => {{
+      band.low = parseFloat(rMinInput.value);
+      refreshShades();
+    }});
+    block.appendChild(makeControlRow("range min", rMinInput));
+
+    // Range max
+    const rMaxInput = document.createElement("input");
+    rMaxInput.type = "number";
+    rMaxInput.step = "any";
+    rMaxInput.value = band.high;
+    rMaxInput.addEventListener("change", () => {{
+      band.high = parseFloat(rMaxInput.value);
+      refreshShades();
+    }});
+    block.appendChild(makeControlRow("range max", rMaxInput));
+
+    // Fill color
+    const colorInput = document.createElement("input");
+    colorInput.type = "color";
+    colorInput.value = normalizeColor(band.fillcolor || "#808080");
+    colorInput.addEventListener("input", () => {{
+      band.fillcolor = colorInput.value;
+      refreshShades();
+    }});
+    block.appendChild(makeControlRow("fill color", colorInput));
+
+    // Opacity
+    const opacityInput = document.createElement("input");
+    opacityInput.type = "number";
+    opacityInput.min = "0";
+    opacityInput.max = "1";
+    opacityInput.step = "0.05";
+    opacityInput.value = (band.opacity !== null && band.opacity !== undefined) ? band.opacity : 0.18;
+    opacityInput.addEventListener("input", () => {{
+      band.opacity = parseFloat(opacityInput.value);
+      refreshShades();
+    }});
+    block.appendChild(makeControlRow("opacity", opacityInput));
+
+    // Hatch pattern
+    const hatchSelect = document.createElement("select");
+    const BS = String.fromCharCode(92);
+    ["none", "/", BS, "|", "-", "+", "x"].forEach(v => {{
+      const opt = document.createElement("option");
+      opt.value = v;
+      opt.textContent = v === "none" ? "none" : v;
+      if ((band.hatch || "none") === v) opt.selected = true;
+      hatchSelect.appendChild(opt);
+    }});
+    hatchSelect.addEventListener("change", () => {{
+      band.hatch = hatchSelect.value === "none" ? null : hatchSelect.value;
+      refreshShades();
+    }});
+    block.appendChild(makeControlRow("hatch", hatchSelect));
 
     container.appendChild(block);
   }});
@@ -1553,6 +2095,70 @@ function buildTraceControls() {{
 buildLayoutControls();
 buildAxisControls();
 buildTraceControls();
+buildShadeControls();
+if (SHADE_BANDS.some(b => b.initially_hidden)) refreshShades();
+
+// ---- Drag-to-resize ----
+(function initResize() {{
+  const handle = document.getElementById("resize-handle");
+  if (!handle) return;
+  const plot = document.getElementById(PLOT_ID);
+  if (!plot) return;
+  let dragging = false;
+  let startX, startY, startW, startH;
+
+  handle.addEventListener("mousedown", (e) => {{
+    e.preventDefault();
+    dragging = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    startW = plot.offsetWidth;
+    startH = plot.offsetHeight;
+  }});
+
+  document.addEventListener("mousemove", (e) => {{
+    if (!dragging) return;
+    const newW = Math.max(400, startW + (e.clientX - startX));
+    const newH = Math.max(300, startH + (e.clientY - startY));
+    Plotly.relayout(plot, {{width: newW, height: newH}});
+  }});
+
+  document.addEventListener("mouseup", () => {{
+    dragging = false;
+  }});
+}})();
+
+// ---- Sidebar splitter ----
+(function initSplitter() {{
+  const splitter = document.getElementById("sidebar-splitter");
+  const sidebar = document.querySelector(".controls");
+  if (!splitter || !sidebar) return;
+  let dragging = false;
+  let startX, startW;
+
+  splitter.addEventListener("mousedown", (e) => {{
+    e.preventDefault();
+    dragging = true;
+    startX = e.clientX;
+    startW = sidebar.offsetWidth;
+    splitter.classList.add("active");
+    document.body.style.userSelect = "none";
+  }});
+
+  document.addEventListener("mousemove", (e) => {{
+    if (!dragging) return;
+    const newW = Math.min(600, Math.max(200, startW + (e.clientX - startX)));
+    sidebar.style.width = newW + "px";
+    sidebar.style.minWidth = newW + "px";
+  }});
+
+  document.addEventListener("mouseup", () => {{
+    if (!dragging) return;
+    dragging = false;
+    splitter.classList.remove("active");
+    document.body.style.userSelect = "";
+  }});
+}})();
 </script>
 </body>
 </html>
