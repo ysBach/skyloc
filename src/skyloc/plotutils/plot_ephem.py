@@ -1701,6 +1701,9 @@ function buildAxisControls() {{
       maxInput.value = axis.range_max;
     }}
 
+    axis._minInput = minInput;
+    axis._maxInput = maxInput;
+
     const resetBtn = document.createElement("button");
     resetBtn.textContent = "auto range";
     resetBtn.style.cssText = "font-size:12px; padding:1px 8px; cursor:pointer;";
@@ -2097,6 +2100,31 @@ buildAxisControls();
 buildTraceControls();
 buildShadeControls();
 if (SHADE_BANDS.some(b => b.initially_hidden)) refreshShades();
+
+// Sync sidebar range inputs on any relayout (zoom, double-click reset, etc.)
+const _plotEl = document.getElementById(PLOT_ID);
+if (_plotEl) {{
+  _plotEl.on("plotly_relayout", function(ed) {{
+    AXES.forEach(axis => {{
+      if (!axis._minInput || !axis._maxInput) return;
+      const rKey = axis.layout_key + ".range";
+      const arKey = axis.layout_key + ".autorange";
+      if (ed[rKey]) {{
+        axis._minInput.value = ed[rKey][0];
+        axis._maxInput.value = ed[rKey][1];
+      }} else if (ed[arKey] || ed["autosize"]) {{
+        // autorange or reset: read back after Plotly finishes
+        setTimeout(() => {{
+          const la = _plotEl.layout[axis.layout_key];
+          if (la && la.range) {{
+            axis._minInput.value = la.range[0];
+            axis._maxInput.value = la.range[1];
+          }}
+        }}, 50);
+      }}
+    }});
+  }});
+}}
 
 // ---- Drag-to-resize ----
 (function initResize() {{
