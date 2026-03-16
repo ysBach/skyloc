@@ -42,6 +42,7 @@ def locator_twice(
     add_jds=True,
     non_gravs=[True, True],
     calc_ephems_crude=False,
+    use_spice_for_loaded=(False, False),
 ):
     """Simple utility function to run SSOLocator twice
 
@@ -97,6 +98,11 @@ def locator_twice(
         If `True`, calculate ephemerides after the first crude step.
         Default is `False`.
 
+    use_spice_for_loaded : tuple of bool, optional
+        A 2-tuple indicating whether to use SPICE kernels for planets (and
+        large asteroids loaded in kete) in the first and second FOV state
+        check. Default is ``(False, False)``.
+
     Notes
     -----
     Arguments `jd0`, `include_asteroids`, and `dt_limit` must be 2-tuple, such
@@ -127,7 +133,11 @@ def locator_twice(
         suppress_errors=suppress_errors,
         include_asteroids=include_asteroids[0],
     )
-    sl1.fov_state_check(dt_limit=dt_limit[0], include_asteroids=include_asteroids[0])
+    sl1.fov_state_check(
+        dt_limit=dt_limit[0],
+        include_asteroids=include_asteroids[0],
+        use_spice_for_loaded=use_spice_for_loaded[0],
+    )
 
     if calc_ephems_crude:
         sl1.calc_ephems(
@@ -146,7 +156,11 @@ def locator_twice(
         suppress_errors=suppress_errors,
         include_asteroids=include_asteroids[1],
     )
-    sl2.fov_state_check(dt_limit=dt_limit[1], include_asteroids=include_asteroids[1])
+    sl2.fov_state_check(
+        dt_limit=dt_limit[1],
+        include_asteroids=include_asteroids[1],
+        use_spice_for_loaded=use_spice_for_loaded[1],
+    )
     sl2.calc_ephems(add_obsid=add_obsid, drop_obsindex=drop_obsindex, add_jds=add_jds)
 
     return sl1, sl2
