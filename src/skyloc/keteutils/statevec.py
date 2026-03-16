@@ -1,3 +1,9 @@
+"""Factory functions for creating kete ``State`` objects from arrays.
+
+Simplifies construction of ``kete.State`` from position/velocity arrays
+with automatic frame parsing and optional vectorised (batch) creation.
+"""
+
 from ._kete_import import kete, require_kete
 from ._util import parse_frame
 
