@@ -1,3 +1,10 @@
+"""Time conversion utilities bridging Astropy and SPICE.
+
+Converts time values through Astropy's ``Time`` to SPICE ephemeris time
+(ET, equivalent to TDB), optionally returning ctypes-wrapped values for
+direct use with the ctypes-based SPICE wrappers in :mod:`.fastfunc`.
+"""
+
 import ctypes
 
 import numpy as np

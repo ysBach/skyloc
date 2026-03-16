@@ -1,3 +1,10 @@
+"""Stderr filtering utilities for suppressing kete's Rust-level messages.
+
+Kete's n-body propagator prints impact-detection warnings to stderr via
+Rust's ``eprintln!`` macro.  These utilities temporarily redirect
+``sys.stderr`` to filter out those messages during propagation runs.
+"""
+
 # tools to redirect stderr(eprintln!) from kete's rust code.
 
 import sys
@@ -11,6 +18,16 @@ __all__ = [
 
 
 class FilteredStderr:
+    """File-like stderr wrapper that suppresses lines matching given prefixes.
+
+    Parameters
+    ----------
+    filter_startswith : str or list of str
+        Prefix(es) of stderr lines to suppress.
+    original_stderr : file-like
+        The original ``sys.stderr`` to delegate non-suppressed writes to.
+    """
+
     def __init__(self, filter_startswith, original_stderr):
         self.filter_startswith = (
             filter_startswith
@@ -42,8 +59,6 @@ def filter_stderr(filter_startswith):
 
     Examples
     --------
-    Examples
-    --------
     ::
 
         with filter_stderr(["impact detected", "warning:"]):
@@ -65,6 +80,17 @@ def filter_stderr(filter_startswith):
 
 
 def filter_stderr_kete_loaded_asteroids():
+    """Return a :func:`filter_stderr` context manager for loaded asteroids.
+
+    Builds filter prefixes from the 5 loaded asteroid designations so that
+    kete's Rust-level ``"Impact detected between ..."`` warnings for
+    self-colliding perturber asteroids are silently suppressed.
+
+    Returns
+    -------
+    contextmanager
+        A context manager that filters asteroid-impact stderr messages.
+    """
     cache = get_kete_loaded_objects()
     filter_startswith = []
     for astnum_str in cache['asteroids']:

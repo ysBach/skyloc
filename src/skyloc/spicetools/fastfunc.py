@@ -1,3 +1,11 @@
+"""Pre-bound ctypes wrappers for performance-critical SPICE functions.
+
+Provides factory functions that return closures with pre-converted
+ctypes arguments (reference frames, observer IDs, etc.), eliminating
+per-call string encoding overhead when calling ``spkgps_c`` and
+``spkcvo_c`` in tight loops.
+"""
+
 import ctypes
 
 import numpy as np

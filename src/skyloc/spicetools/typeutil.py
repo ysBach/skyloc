@@ -1,3 +1,9 @@
+"""Low-level ctypes type-conversion helpers for spiceypy interop.
+
+Provides lightweight replacements for ``spiceypy.stypes`` functions,
+skipping input-type checks for maximum throughput in inner loops.
+"""
+
 import ctypes
 
 

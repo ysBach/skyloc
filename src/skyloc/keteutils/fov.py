@@ -1,3 +1,10 @@
+"""Field-of-view construction and management utilities for kete.
+
+Provides :class:`FOVCollection` for convenient indexing, masking, and
+persistence of ``kete.FOV`` objects, plus factory functions for creating
+rectangular, conical, and omnidirectional fields of view.
+"""
+
 from pathlib import Path
 
 from ._kete_import import kete, require_kete

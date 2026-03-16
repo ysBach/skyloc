@@ -1,3 +1,11 @@
+"""Orbit propagation and geometry calculation utilities using kete.
+
+Provides functions for converting orbital-element DataFrames to kete
+``State`` objects, propagating them via n-body integration, computing
+observer-centric geometries (phase angle, distances, RA/Dec, ecliptic
+coordinates), and constructing non-gravitational force models.
+"""
+
 from pathlib import Path
 import logging
 

@@ -1,3 +1,16 @@
+"""Physical and SPICE constants for asteroids and planets used by kete.
+
+Attributes
+----------
+KETE_ASTEROIDS_PHYSICS : dict
+    Physical and SPICE data for the 5 large asteroids that kete uses as
+    perturbers (Ceres, Pallas, Vesta, Hygiea, Interamnia).  Keys are
+    SBDB number strings; values contain ``name``, ``spkid``, ``H``,
+    ``G``, ``diameter`` (km), and ``p_V`` (geometric albedo).
+KETE_PLANETS : dict
+    NAIF SPICE IDs and barycenter codes for the nine classical planets.
+"""
+
 # SBDB, as of 2025 Jun
 KETE_ASTEROIDS_PHYSICS = {
     "1": {

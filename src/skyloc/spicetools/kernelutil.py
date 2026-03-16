@@ -1,3 +1,10 @@
+"""SPICE kernel meta-file generation utilities.
+
+Provides :func:`make_meta` for creating SPICE kernel meta-files from a
+list of kernel paths, with support for path symbols and automatic line
+splitting for long paths.
+"""
+
 from pathlib import Path
 from ..configs import PKG_PATH
 

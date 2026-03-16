@@ -1,3 +1,14 @@
+"""Numba-optimised TAN-SIP WCS for fast pixel ↔ world transformations.
+
+Implements ``FastTanSipWCS``, a lightweight replacement for
+``astropy.wcs.WCS`` targeting TAN projection with SIP distortion.
+Construction from a header dictionary is ~50× faster than Astropy WCS.
+Batch transformations use Numba-compiled kernels with fused 2-D Horner's
+scheme for SIP evaluation.
+
+See :class:`FastTanSipWCS` for assumptions, limitations, and benchmarks.
+"""
+
 import numpy as np
 import logging
 from numba import njit, float64, int64, boolean, prange
@@ -285,7 +296,23 @@ class _FastTanSipWCSStruct:
 
 
 def create_wcs_from_dict(hdr):
-    """Factory independent of class."""
+    """Create a ``_FastTanSipWCSStruct`` from a header dictionary.
+
+    This is the factory function used internally by :class:`FastTanSipWCS`.
+    It extracts CRVAL, CRPIX, CD/PC matrix, and SIP coefficients from
+    *hdr* and returns a Numba jitclass instance ready for kernel calls.
+
+    Parameters
+    ----------
+    hdr : dict
+        Dictionary-like object containing FITS WCS header keywords
+        (CRVAL1/2, CRPIX1/2, CD or PC+CDELT, A/B/AP/BP SIP coefficients).
+
+    Returns
+    -------
+    _FastTanSipWCSStruct
+        Numba jitclass instance with all WCS parameters populated.
+    """
     crval = np.array([hdr.get("CRVAL1", 0.0), hdr.get("CRVAL2", 0.0)], dtype=np.float64)
     crpix = np.array([hdr.get("CRPIX1", 0.0), hdr.get("CRPIX2", 0.0)], dtype=np.float64)
     # Prioritize CD matrix if present (consistent with WCSLIB/Astropy)
@@ -395,11 +422,22 @@ class FastTanSipWCS:
         ``PARALLEL_THRESHOLD_DEFAULT``.
     """
 
-    __slots__ = ("_wcs", "parallel_threshold")
+    __slots__ = ("_wcs", "parallel_threshold", "naxis", "_naxis", "array_shape")
 
     def __init__(self, hdr_dict, parallel_threshold=PARALLEL_THRESHOLD_DEFAULT):
         self._wcs = create_wcs_from_dict(hdr_dict)
         self.parallel_threshold = parallel_threshold
+        self.naxis = 2
+        naxis1 = hdr_dict.get("NAXIS1", None)
+        naxis2 = hdr_dict.get("NAXIS2", None)
+        if naxis1 is None or naxis2 is None:
+            self._naxis = None
+            self.array_shape = None
+        else:
+            naxis1 = int(naxis1)
+            naxis2 = int(naxis2)
+            self._naxis = (naxis1, naxis2)
+            self.array_shape = (naxis2, naxis1)
 
     def all_pix2world(self, x, y, origin):
         """Convert pixel coordinates to world coordinates.
@@ -492,6 +530,10 @@ class FastTanSipWCS:
 
         # 2. Standard WCS keywords
         header["NAXIS"] = 2
+        if self.array_shape is not None:
+            header["NAXIS1"] = self.array_shape[1]
+            header["NAXIS2"] = self.array_shape[0]
+
         header["CTYPE1"] = "RA---TAN-SIP" if self._wcs.has_sip else "RA---TAN"
         header["CTYPE2"] = "DEC--TAN-SIP" if self._wcs.has_sip else "DEC--TAN"
         header["CRVAL1"] = self._wcs.crval[0]
@@ -702,5 +744,4 @@ def infov2d(x, y, bezels=0.5, naxes=None):
     )
 
     return infov
-
 

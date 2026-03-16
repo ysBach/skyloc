@@ -1,3 +1,11 @@
+"""skyloc — Solar System object locator and ephemeris toolkit.
+
+Provides classes and utilities for locating Solar System objects in
+astronomical images, querying orbital databases (JPL SBDB / Horizons),
+propagating orbits via n-body integration (through the optional ``kete``
+backend), and working with FITS header databases and WCS transformations.
+"""
+
 from .query import *
 from .ssoflux import *
 

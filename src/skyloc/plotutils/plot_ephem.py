@@ -1,3 +1,13 @@
+"""Interactive multi-axis ephemeris plotting with Plotly.
+
+Provides :func:`plot_ephemeris_plotly` for creating richly configurable,
+multi-y-axis time-series plots of ephemeris data, and
+:func:`save_plotly_html` for exporting them as self-contained HTML files
+with interactive axis selectors and shade controls.
+
+Requires the optional ``plotly`` dependency (``pip install plotly``).
+"""
+
 import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
