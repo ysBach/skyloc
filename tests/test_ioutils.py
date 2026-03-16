@@ -386,8 +386,8 @@ class TestCompactEphemParqCols:
 
         # Check that scaled columns exist
         assert "alpha*360" in result.columns
-        assert "r_hel*1000" in result.columns
-        assert "vmag*2000" in result.columns
+        assert "r_hel*1" in result.columns
+        assert "vmag*1" in result.columns
 
         # Check that original columns are dropped
         assert "alpha" not in result.columns
