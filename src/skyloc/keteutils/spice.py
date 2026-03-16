@@ -1,8 +1,16 @@
-import kete
+"""SPICE kernel query helpers using kete's built-in kernel manager.
+
+Wraps ``kete.spice.get_state`` for batch retrieval and provides
+convenience functions to check whether a given SPK ID is loaded.
+"""
+
+import numpy as np
+
+from ._kete_import import kete, require_kete
 
 from ._util import get_kete_loaded_objects, parse_frame
 
-__all__ = ["is_spk_loaded"]
+__all__ = ["is_spk_loaded", "get_states", "get_state_arrays"]
 
 
 def is_spk_loaded(idstr, convert_to=None):
@@ -42,10 +50,10 @@ def is_spk_loaded(idstr, convert_to=None):
 
     # Get lazy-loaded kete objects
     cache = get_kete_loaded_objects()
-    spks = cache['spks']
-    spks_name = cache['spks_name']
-    name2id = cache['name2id']
-    id2name = cache['id2name']
+    spks = cache["spks"]
+    spks_name = cache["spks_name"]
+    name2id = cache["name2id"]
+    id2name = cache["id2name"]
 
     # Is this ID/NAME in the loaded sets?
     is_loaded = idstr in spks or idstr in spks_name
@@ -63,18 +71,90 @@ def is_spk_loaded(idstr, convert_to=None):
     raise ValueError(f"Unknown conversion type: {convert_to}")
 
 
-def get_states(target, jds, center, frame=kete.Frames.Ecliptic):
-    """Run multiple get_state for jd values
+def get_states(target, jds, center, frame=None):
+    """Get SPICE states for a target at multiple JD times.
+
+    **Requires kete**: This function needs kete to be installed.
+    Install with: ``pip install skyloc[kete]``
+
     Parameters
     ----------
     target : str
-        The names of the target object, this can include any object name listed in
-        :meth:`~kete.spice.loaded_objects`
-    jds : float or list of float
-        Julian time (TDB) of the desired record.
+        The name of the target object. This can include any object name listed in
+        :meth:`~kete.spice.loaded_objects`.
+
+    jds : float or array-like of float
+        Julian time(s) (TDB) of the desired record(s).
+
     center : str
-        The center point, this defaults to being heliocentric.
-    frame : str or `kete.Frame`
-        Coordinate frame of the state, defaults to ecliptic.
+        The center point for the state vector (e.g., "sun" for heliocentric).
+
+    frame : str or `kete.Frames`, optional
+        Coordinate frame of the state. Default is `kete.Frames.Ecliptic`.
+
+    Returns
+    -------
+    states : list of `kete.State`
+        List of State objects for each requested JD.
+
+    Notes
+    -----
+    This function wraps `kete.spice.get_state()` for batch retrieval.
+    All times must be within the coverage of the loaded SPICE kernels.
     """
+    require_kete()
+    if frame is None:
+        frame = kete.Frames.Ecliptic
     frame = parse_frame(frame)
+    jds = np.atleast_1d(jds)
+
+    states = []
+    for jd in jds:
+        state = kete.spice.get_state(target, jd, center, frame)
+        states.append(state)
+
+    return states
+
+
+def get_state_arrays(target, jds, center="sun", frame=None):
+    """Get SPICE states as numpy arrays for a target at multiple JD times.
+
+    **Requires kete**: This function needs kete to be installed.
+    Install with: ``pip install skyloc[kete]``
+
+    Parameters
+    ----------
+    target : str
+        The name of the target object. This can include any object name listed in
+        :meth:`~kete.spice.loaded_objects`.
+
+    jds : float or array-like of float
+        Julian time(s) (TDB) of the desired record(s).
+
+    center : str, optional
+        The center point for the state vector. Default is "sun" (heliocentric).
+
+    frame : str or `kete.Frames`, optional
+        Coordinate frame of the state. Default is `kete.Frames.Ecliptic`.
+
+    Returns
+    -------
+    pos : np.ndarray
+        Position vectors in AU, shape (N, 3) where N is len(jds).
+
+    vel : np.ndarray
+        Velocity vectors in AU/day, shape (N, 3) where N is len(jds).
+
+    Notes
+    -----
+    This is a convenience function for numerical operations.
+    """
+    require_kete()
+    if frame is None:
+        frame = kete.Frames.Ecliptic
+    states = get_states(target, jds, center, frame)
+
+    pos = np.array([[s.pos[0], s.pos[1], s.pos[2]] for s in states])
+    vel = np.array([[s.vel[0], s.vel[1], s.vel[2]] for s in states])
+
+    return pos, vel
