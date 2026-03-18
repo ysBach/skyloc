@@ -32,6 +32,12 @@ Initially motivated by NASA's SPHEREx mission (and NEO Surveyor mission - kete).
 [Website](INSERT WEBSITE LINK HERE) | [Docs/Wiki](INSERT DOCS/WIKI SITE LINK HERE) | [Discussion Board](INSERT DISCUSSION BOARD LINK HERE) | [Issue Tracker](INSERT ISSUE TRACKER LINK HERE)
 -->
 
+## Documentation
+
+For full usage guides and API reference, see the Read the Docs site:
+
+- [skyloc documentation (RTD)](https://skyloc.readthedocs.io/en/latest/)
+
 ## Installation
 
 ### Basic Installation (without kete)
@@ -99,4 +105,3 @@ black **/*.py
 ## Citation
 
 `skyloc` is not intended to be published as an independent, citable package. Depending on your usage, simply cite this repo as a URL link, but always consider citing any of the following as appropriate: [kete](https://github.com/Caltech-IPAC/kete/tree/main#), [spiceypy](https://github.com/AndrewAnnex/SpiceyPy), or [NAIF SPICE](https://naif.jpl.nasa.gov/naif/credit.html).
-
