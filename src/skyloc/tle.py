@@ -1,3 +1,4 @@
+from __future__ import annotations
 # Just in case other query services are not working, TLE might be used..
 
 import re

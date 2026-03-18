@@ -29,6 +29,7 @@ DEFAULT_COORD_MAP : dict
     system names to ``(lon_col, lat_col)`` tuples:
     ``{"eqj2000": ("ra", "dec"), "helecl": ("hel_ecl_lon", "hel_ecl_lat"), ...}``.
 """
+from __future__ import annotations
 
 import re
 from glob import glob
