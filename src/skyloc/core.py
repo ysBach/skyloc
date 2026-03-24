@@ -465,10 +465,8 @@ class StarLocator(Locator):
     sources : pandas.DataFrame
         The source catalog being checked.
 
-    fov_check_results : list
-        Results from fov_static_check after calling `fov_static_check()`.
-
     fov_check_fov2objs : dict
+        Results from fov_static_check after calling `fov_static_check()`.
         Mapping of FOV designations to lists of visible source indices.
 
     Notes
@@ -483,7 +481,6 @@ class StarLocator(Locator):
             self.set_sources(sources)
 
         # Results storage
-        self.fov_check_results = None
         self.fov_check_fov2objs = None
         self.sources_infov_mask = None
 
@@ -529,7 +526,6 @@ class StarLocator(Locator):
         and checked against each FOV.
 
         Results are stored in:
-        - `self.fov_check_results`: Raw results from kete
         - `self.fov_check_fov2objs`: Dict mapping FOV desig -> list of source desigs
         - `self.sources_infov_mask`: Boolean mask of sources visible in any FOV
         """
@@ -562,7 +558,6 @@ class StarLocator(Locator):
         self.sources_infov_mask[list(all_visible_indices)] = True
 
         self.fov_check_fov2objs = fov2objs
-        self.fov_check_results = fov2objs  # For compatibility
 
         # FOVs with objects
         self.fov_mask_hasobj = self.fovc.mask_by_desig(fov2objs.keys())
