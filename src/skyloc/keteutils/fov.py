@@ -90,16 +90,14 @@ class FOVCollection:
             self._desig_index = {str(desig): i for i, desig in enumerate(fov_desigs)}
 
     def __getitem__(self, item):
-        """Get FOV by index or designation."""
-
-        try:  # if int or numpy-like access:
-            return self.fovarr[item]
-        except IndexError:
-            try:  # if str:
-                return self.fovarr[self._desig_index[item]]
-            except TypeError:  # list of str
-                mask = self.mask_by_desig(item)
-                return self.fovarr[mask]
+        """Get FOV by index, slice, mask, or designation."""
+        if isinstance(item, str):
+            return self.fovarr[self._desig_index[item]]
+        if isinstance(item, list) and item and isinstance(item[0], str):
+            mask = self.mask_by_desig(item)
+            return self.fovarr[mask]
+        # int, slice, or array-like mask — let numpy raise IndexError naturally
+        return self.fovarr[item]
 
     def __getattr__(self, name):
         # e.g., size
