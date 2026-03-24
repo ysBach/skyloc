@@ -541,33 +541,21 @@ class StarLocator(Locator):
         dec_arr = self._sources["dec"].values
         desigs = self._sources["desig"].values
 
-        # Create direction vectors for each source
-        source_vectors = []
-        for ra, dec in zip(ra_arr, dec_arr):
-            vec = kete.Vector.from_ra_dec(ra=ra, dec=dec)
-            source_vectors.append(vec)
+        source_vectors = [
+            kete.Vector.from_ra_dec(ra=ra, dec=dec)
+            for ra, dec in zip(ra_arr, dec_arr)
+        ]
 
-        # Run static check for each FOV
+        results = kete.fov.fov_static_check(source_vectors, self.fovc.fovlist)
+        # [(indices, fov), ...] for FOVs with hits
+
         fov2objs = {}
         all_visible_indices = set()
-
-        for fov in self.fovc.fovlist:
-            visible_indices = []
-            for i, vec in enumerate(source_vectors):
-                # Check if vector is within FOV
-                # fov_static_check takes a list of vectors and returns those in FOV
-                try:
-                    result = kete.fov.fov_static_check([vec], [fov])
-                    if result:
-                        visible_indices.append(i)
-                        all_visible_indices.add(i)
-                except Exception as e:
-                    logger.debug("fov_static_check failed for source %d: %s", i, e)
-                    continue
-
-            if visible_indices:
-                visible_desigs = [desigs[i] for i in visible_indices]
-                fov2objs[fov.observer.desig] = visible_desigs
+        for indices, fov in results:
+            if len(indices) > 0:
+                all_visible_indices.update(indices)
+                visible_desigs = [desigs[i] for i in indices]
+                fov2objs.setdefault(fov.observer.desig, []).extend(visible_desigs)
 
         # Create mask for sources in any FOV
         self.sources_infov_mask = np.zeros(len(self._sources), dtype=bool)
