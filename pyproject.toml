@@ -37,10 +37,10 @@ dependencies = [
 
 [project.optional-dependencies]
 kete = [
-    "kete >=1.0.8, <2.0.0",  # skyloc depends on Caltech IPAC version
+    "kete >=1.0.8, <4.0.0",  # skyloc depends on Caltech IPAC version
 ]
 full = [
-    "kete >=1.0.8, <2.0.0",
+    "kete >=1.0.8, <4.0.0",
     "plotly",
 ]
 
