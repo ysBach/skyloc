@@ -1,13 +1,90 @@
-"""Factory functions for creating kete ``State`` objects from arrays.
-
-Simplifies construction of ``kete.State`` from position/velocity arrays
-with automatic frame parsing and optional vectorised (batch) creation.
+"""Tools related to ``State`` and ``Vector`` objects from kete.
 """
+
+import numpy as np
 
 from ._kete_import import kete, require_kete
 from ._util import parse_frame
 
-__all__ = ["make_kete_state"]
+__all__ = ["make_kete_state", "ecl2eq", "eq2ecl"]
+
+# ---------------------------------------------------------------------------
+# Frame rotation constants (ecliptic <-> equatorial J2000)
+# ---------------------------------------------------------------------------
+
+# IAU 1976 mean obliquity of the ecliptic at J2000.0 (degrees).
+# Numerically identical to what kete uses for Vector.as_equatorial.
+_ECL_OBLIQUITY_DEG = 23.4392911
+_COS_EPS = np.cos(np.deg2rad(_ECL_OBLIQUITY_DEG))
+_SIN_EPS = np.sin(np.deg2rad(_ECL_OBLIQUITY_DEG))
+
+# Ecliptic J2000 -> equatorial J2000: rotation around x-axis by +eps
+_R_ECL2EQ = np.array(
+    [[1.0, 0.0,      0.0     ],
+     [0.0, _COS_EPS, -_SIN_EPS],
+     [0.0, _SIN_EPS,  _COS_EPS]]
+)
+# Equatorial J2000 -> ecliptic J2000: transpose (pure rotation, so R^-1 = R^T)
+_R_EQ2ECL = _R_ECL2EQ.T
+
+
+def ecl2eq(xyz):
+    """Rotate ecliptic J2000 Cartesian coordinates to equatorial J2000.
+
+    Applies the IAU 1976 mean obliquity rotation (23.4392911 deg around the
+    x-axis). Numerically identical to kete's ``Vector.as_equatorial``, but
+    operates on plain numpy arrays: no per-element kete object construction.
+
+    Parameters
+    ----------
+    xyz : array_like, shape (..., 3)
+        Cartesian coordinates in the ecliptic J2000 frame (any units).
+
+    Returns
+    -------
+    np.ndarray, shape (..., 3)
+        Coordinates in the equatorial J2000 frame, same units as input.
+
+    Examples
+    --------
+    Single vector::
+
+        ecl2eq([1.0, 0.5, 0.3])
+
+    Batch of N vectors::
+
+        ecl2eq(np.random.randn(1000, 3))
+    """
+    xyz = np.asarray(xyz, dtype=float)
+    return xyz @ _R_ECL2EQ.T
+
+
+def eq2ecl(xyz):
+    """Rotate equatorial J2000 Cartesian coordinates to ecliptic J2000.
+
+    Inverse of `ecl2eq`. Numerically identical to kete's
+    ``Vector.as_ecliptic``, but operates on plain numpy arrays: no per-element
+    kete object construction.
+
+    Parameters
+    ----------
+    xyz : array_like, shape (..., 3)
+        Cartesian coordinates in the equatorial J2000 frame (any units).
+
+    Returns
+    -------
+    np.ndarray, shape (..., 3)
+        Coordinates in the ecliptic J2000 frame, same units as input.
+
+    Examples
+    --------
+    Round-trip check::
+
+        v = np.array([1.0, 0.5, 0.3])
+        assert np.allclose(v, eq2ecl(ecl2eq(v)))
+    """
+    xyz = np.asarray(xyz, dtype=float)
+    return xyz @ _R_EQ2ECL.T
 
 
 @require_kete
