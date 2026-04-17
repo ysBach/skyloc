@@ -83,8 +83,6 @@ class TestCalcGeometries:
             "hel_ecl_lat",
             "obs_ecl_lon",
             "obs_ecl_lat",
-            "obs_ecl_lon",
-            "obs_ecl_lat",
             "racosdec_rate",
             "dec_rate",
             "sky_motion",
