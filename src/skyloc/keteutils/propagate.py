@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from ._constants import KETE_ASTEROIDS_PHYSICS
+from .statevec import ecl2eq
 
 logger = logging.getLogger(__name__)
 
@@ -355,11 +356,22 @@ def calc_geometries(
             and the position angle in degrees. PA is positive if RA rate is
             positive (i.e., measured counter-clockwise from the apparent
             of-date north pole direction, which is identical to JPL Horizons)
+        - sun_pa : np.ndarray
+            The position angle of the Sun as seen from the observer, projected
+            onto the plane of sky at the object's position. Measured East-of-North
+            in degrees, with the same sign convention as `sky_motion_pa`
+            (i.e., positive toward East). Only computed when `do_radec=True`.
+            Equivalent to the "P.A. to Sun" column in JPL Horizons.
 
     Notes
     -----
     Takes ~1 ms for 1000 objects (MBP 14" [2024, macOS 15.2,
     M4Pro(8P+4E/G20c/N16c/48G)])
+
+    The ecliptic-to-equatorial rotation used for `sun_pa` is performed by
+    `ecl2eq` (from `skyloc.keteutils.statevec`), which applies the IAU 1976
+    mean obliquity at J2000.0 (23.4392911 deg). This is numerically identical
+    to kete's ``Vector.as_equatorial`` method.
     """
     require_kete()
     # obs2objs = simulstates.obs_vecs
@@ -452,6 +464,40 @@ def calc_geometries(
         geoms["sky_motion_pa"] = np.rad2deg(
             np.arctan2(geoms["racosdec_rate"], geoms["dec_rate"])
         )
+
+        # sun_pa: PA of the Sun as seen from the observer, projected onto the
+        # plane of sky at the object's position (East-of-North, degrees).
+        #
+        # Direction from observer toward Sun (ecliptic J2000):
+        #   obs2sun = -sun2obs_xyz
+        # Rotate to equatorial J2000 using the precomputed obliquity matrix.
+        # Then project onto the tangent plane at (RA, Dec) of the object:
+        #   e_north = (-sin(dec)*cos(ra), -sin(dec)*sin(ra), cos(dec))
+        #   e_east  = (-sin(ra),           cos(ra),          0)
+        #   sun_pa  = arctan2(dot(obs2sun_eq, e_east), dot(obs2sun_eq, e_north))
+        ra_rad = np.deg2rad(geoms["ra"])   # shape (n,)
+        dec_rad = np.deg2rad(geoms["dec"])  # shape (n,)
+
+        # obs2sun in ecliptic J2000, broadcast to (n, 3)
+        obs2sun_ecl = np.broadcast_to(-sun2obs_xyz, (n_states, 3))
+        # Rotate to equatorial J2000 using vectorised ecl2eq()
+        obs2sun_eq = ecl2eq(obs2sun_ecl)  # shape (n, 3)
+
+        # Tangent-plane basis vectors at each object's (RA, Dec), shape (n, 3)
+        sin_ra = np.sin(ra_rad)
+        cos_ra = np.cos(ra_rad)
+        sin_dec = np.sin(dec_rad)
+        cos_dec = np.cos(dec_rad)
+
+        # e_north: d(n_hat)/d(dec)  [already unit length]
+        e_north = np.column_stack([-sin_dec * cos_ra, -sin_dec * sin_ra, cos_dec])
+        # e_east: d(n_hat)/d(ra) / cos(dec)  [already unit length]
+        e_east = np.column_stack([-sin_ra, cos_ra, np.zeros(n_states)])
+
+        v_north = np.sum(obs2sun_eq * e_north, axis=1)
+        v_east = np.sum(obs2sun_eq * e_east, axis=1)
+        geoms["sun_pa"] = np.rad2deg(np.arctan2(v_east, v_north))
+
     return geoms
 
 

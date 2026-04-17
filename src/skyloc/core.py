@@ -1196,6 +1196,11 @@ def calc_ephems(
             and the position angle in degrees. PA is positive if RA rate is
             positive (i.e., measured counter-clockwise from the apparent
             of-date north pole direction, which is identical to JPL Horizons)
+        - sun_pa :
+            The position angle of the Sun as seen from the observer, projected
+            onto the plane of sky at the object's position. Measured East-of-North
+            in degrees, with the same sign convention as `sky_motion_pa`.
+            Equivalent to JPL Horizons' \"P.A. to Sun\" column.
         - vmag :
             The apparent magnitude of the object in V-band based on IAU H, G
             magnitude system *or* comet N-/T-mag system from Horizons. `nanmin`
