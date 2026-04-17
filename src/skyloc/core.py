@@ -572,7 +572,7 @@ class StarLocator(Locator):
             len(fov2objs),
         )
 
-    def get_visible_sources(self):
+    def get_visible_sources(self, reset_index=True):
         """Get DataFrame of sources visible in at least one FOV.
 
         Returns
@@ -582,7 +582,10 @@ class StarLocator(Locator):
         """
         if self.sources_infov_mask is None:
             raise ValueError("Run fov_static_check() first.")
-        return self._sources[self.sources_infov_mask].copy()
+        visible_sources = self._sources[self.sources_infov_mask].copy()
+        if reset_index:
+            return visible_sources.reset_index(drop=True)
+        return visible_sources
 
 
 class SSOLocator(Locator):
