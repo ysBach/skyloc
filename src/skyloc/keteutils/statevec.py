@@ -1,7 +1,10 @@
 """Tools related to ``State`` and ``Vector`` objects from kete.
 """
 
+import logging
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 from ._kete_import import kete, require_kete
 from ._util import parse_frame
@@ -85,6 +88,70 @@ def eq2ecl(xyz):
     """
     xyz = np.asarray(xyz, dtype=float)
     return xyz @ _R_EQ2ECL.T
+
+
+def _state2list(states):
+    """Normalize a single state or an iterable of states to a list."""
+    if isinstance(states, (list, tuple)):
+        return list(states)
+    if isinstance(states, np.ndarray):
+        return list(states.tolist())
+    return [states]
+
+
+@require_kete
+def _resolve_observer_pos(observer):
+    """Resolve observer into Cartesian xyz array and kete.Vector.
+
+    Parameters
+    ----------
+    observer : object
+        One of kete.State, kete.Vector, FOVCollection, kete FOV object,
+        or array_like with shape (3,).
+
+    Returns
+    -------
+    xyz : np.ndarray
+        Observer position in heliocentric ecliptic J2000 coordinates (AU),
+        shape (3,).
+    vec : kete.Vector
+        Observer position as a kete.Vector.
+    """
+    require_kete()
+    from .fov import FOVCollection
+    
+    if isinstance(observer, kete.State):
+        xyz = np.array([observer.pos[0], observer.pos[1], observer.pos[2]], dtype=float)
+        return xyz, observer.pos
+
+    if isinstance(observer, kete.Vector):
+        xyz = np.array([observer[0], observer[1], observer[2]], dtype=float)
+        return xyz, observer
+
+    if hasattr(observer, "observer") and hasattr(observer.observer, "pos"):
+        obspos = observer.observer.pos
+        xyz = np.array([obspos[0], obspos[1], obspos[2]], dtype=float)
+        return xyz, obspos
+
+    if isinstance(observer, FOVCollection):
+        if len(observer) == 0:
+            raise ValueError("FOVCollection is empty; cannot resolve observer position.")
+        if len(observer) > 1:
+            logger.warning(
+                "FOVCollection has %d FOVs; using observer from the first FOV.",
+                len(observer),
+            )
+        obspos = observer[0].observer.pos
+        xyz = np.array([obspos[0], obspos[1], obspos[2]], dtype=float)
+        return xyz, obspos
+
+    xyz = np.asarray(observer, dtype=float).reshape(-1)
+    if xyz.shape != (3,):
+        raise ValueError(
+            "observer must be kete.State, kete.Vector, FOV/FOVCollection, "
+            "or array_like with shape (3,)."
+        )
+    return xyz, kete.Vector(xyz)
 
 
 @require_kete
