@@ -1,5 +1,8 @@
 from pathlib import Path
+from collections.abc import Iterable, Mapping
 import logging
+import time
+from warnings import warn
 
 import numpy as np
 import pandas as pd
@@ -11,7 +14,51 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "fetch_orb",
+    "query_orb_by_desig",
 ]
+
+
+def _normalize_desigs(desigs):
+    """Normalize designation input into a flat, unique list of strings."""
+    flat = []
+
+    def _walk(value):
+        if value is None:
+            return
+
+        if isinstance(value, (str, bytes, np.str_)):
+            s = str(value).strip()
+            if s:
+                flat.append(s)
+            return
+
+        if isinstance(value, Mapping):
+            s = str(value).strip()
+            if s:
+                flat.append(s)
+            return
+
+        if isinstance(value, np.ndarray):
+            for v in value.tolist():
+                _walk(v)
+            return
+
+        if isinstance(value, Iterable):
+            for v in value:
+                _walk(v)
+            return
+
+        s = str(value).strip()
+        if s:
+            flat.append(s)
+
+    _walk(desigs)
+
+    if not flat:
+        return []
+
+    # Preserve order while removing duplicates.
+    return list(dict.fromkeys(flat))
 
 
 def fetch_orb(
@@ -185,6 +232,233 @@ def fetch_orb(
         logger.debug("Comets: %d | Non-comet: %d", n_com, orb.shape[0] - n_com)
 
     return orb, m_ng
+
+
+def query_orb_by_desig(
+    desigs,
+    drop_impacted=True,
+    drop_unreliable=True,
+    kind2bools=True,
+    neo2bool=True,
+    pha2bool=True,
+    twobody2bool=True,
+    strict=False,
+    max_workers=1,
+    max_retries=2,
+    retry_delay=0.25,
+):
+    """Query SBDB for one/few designation strings.
+
+    This uses the single-object SBDB search endpoint (`id_type="search"`) for
+    each requested designation and concatenates the results.
+
+    Parameters
+    ----------
+    desigs : str or iterable
+        One or a few designations/search strings to query. Nested iterables
+        (including NumPy arrays) are flattened.
+
+    strict : bool, optional
+        If `True`, raise `ValueError` when any requested designation is not
+        found. If `False` (default), missing designations are skipped.
+
+    max_workers : int, optional
+        Number of worker threads for querying multiple designations.
+        Use values > 1 to query several designations concurrently.
+
+    max_retries : int, optional
+        Number of retries for transient query failures (not for true not-found
+        responses). Default is 2.
+
+    retry_delay : float, optional
+        Initial delay in seconds between retries. Exponential backoff is used.
+
+    Returns
+    -------
+    orb : `~pandas.DataFrame`
+        Orbit table in a kete/skyloc-compatible schema.
+    """
+    desigs = _normalize_desigs(desigs)
+    if not desigs:
+        raise ValueError("`desigs` must contain at least one non-empty designation.")
+
+    rows = []
+    missing = []
+    failed = []
+
+    def _query_one(d):
+        last_err = None
+        for i_try in range(max_retries + 1):
+            status, row, err = _query_single_orb_by_search(d)
+            if status != "error":
+                return status, row, err
+            last_err = err
+            if i_try < max_retries:
+                time.sleep(retry_delay * (2**i_try))
+        return "error", None, last_err
+
+    if max_workers > 1 and len(desigs) > 1:
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            results = list(ex.map(_query_one, desigs))
+        for d, (status, row, err) in zip(desigs, results):
+            if status == "ok":
+                rows.append(row)
+            elif status == "not_found":
+                missing.append(d)
+            else:
+                failed.append((d, err))
+    else:
+        for d in desigs:
+            status, row, err = _query_one(d)
+            if status == "ok":
+                rows.append(row)
+            elif status == "not_found":
+                missing.append(d)
+            else:
+                failed.append((d, err))
+
+    if missing:
+        msg = f"Could not find {len(missing)} designation(s): {missing}"
+        logger.warning(msg)
+
+    if failed:
+        failed_desigs = [d for d, _ in failed]
+        logger.warning(
+            "Query failed for %d designation(s): %s",
+            len(failed_desigs),
+            failed_desigs,
+        )
+        logger.debug("Failure details: %s", failed)
+
+    if strict and (missing or failed):
+        parts = []
+        if missing:
+            parts.append(f"not found={missing}")
+        if failed:
+            parts.append(f"failed={[d for d, _ in failed]}")
+        raise ValueError("Failed to query all requested designations: " + "; ".join(parts))
+
+    if not rows:
+        return pd.DataFrame(columns=["desig"])
+
+    orb = pd.DataFrame(rows)
+    orb = cols2bools_sbdb(
+        orb,
+        kind2bools=kind2bools,
+        neo2bool=neo2bool,
+        pha2bool=pha2bool,
+        twobody2bool=twobody2bool,
+    )
+    orb = sanitize_sbdb(
+        orb,
+        drop_impacted=drop_impacted,
+        drop_unreliable=drop_unreliable,
+    )
+    orb = orb.drop_duplicates(subset="desig", keep="last")
+    return orb.reset_index(drop=True)
+
+
+def _query_single_orb_by_search(
+    desig,
+):
+    """Single-object query by search string via astroquery.
+
+    Returns
+    -------
+    status : {"ok", "not_found", "error"}
+    row : dict or None
+    err : str or None
+    """
+    try:
+        from astroquery.jplsbdb import SBDB
+    except Exception as e:
+        warn(f"astroquery.jplsbdb unavailable for single-object fallback: {e}")
+        return "error", None, str(e)
+
+    try:
+        obj = SBDB.query(
+            desig,
+            id_type="search",
+            full_precision=True,
+            phys=True,
+            covariance="mat",
+        )
+    except Exception as e:
+        msg = str(e)
+        low = msg.lower()
+        if (
+            "not found" in low
+            or "no match" in low
+            or "no matches" in low
+            or "does not match" in low
+            or "matched 0 objects" in low
+        ):
+            return "not_found", None, msg
+        return "error", None, msg
+
+    def _to_float(value, unit=None):
+        if value is None:
+            return np.nan
+        try:
+            if hasattr(value, "to_value"):
+                if unit is None:
+                    return float(value.to_value())
+                try:
+                    return float(value.to_value(unit))
+                except Exception:
+                    # Some fields are already plain floats even when a unit is requested.
+                    pass
+            return float(value)
+        except Exception:
+            try:
+                return float(value.value)
+            except Exception:
+                return np.nan
+
+    objinfo = obj.get("object", {})
+    phys = obj.get("phys_par", {})
+    orbit = obj.get("orbit", {})
+    elems = orbit.get("elements", {})
+    mpars = orbit.get("model_pars") or {}
+
+    row = {
+        "desig": objinfo.get("des", desig),
+        "kind": objinfo.get("kind"),
+        "prefix": objinfo.get("prefix"),
+        "neo": objinfo.get("neo"),
+        "pha": objinfo.get("pha"),
+        "H": _to_float(phys.get("H")),
+        "G": _to_float(phys.get("G")),
+        "M1": _to_float(phys.get("M1")),
+        "M2": _to_float(phys.get("M2")),
+        "K1": _to_float(phys.get("K1")),
+        "K2": _to_float(phys.get("K2")),
+        "PC": _to_float(phys.get("PC")),
+        "diameter": _to_float(phys.get("diameter")),
+        "albedo": _to_float(phys.get("albedo")),
+        "spec_B": phys.get("spec_B"),
+        "spec_T": phys.get("spec_T"),
+        "orbit_id": orbit.get("orbit_id"),
+        "epoch": _to_float(orbit.get("epoch"), unit="d"),
+        "ecc": _to_float(elems.get("e")),
+        "peri_dist": _to_float(elems.get("q"), unit="au"),
+        "incl": _to_float(elems.get("i"), unit="deg"),
+        "lon_node": _to_float(elems.get("om"), unit="deg"),
+        "peri_arg": _to_float(elems.get("w"), unit="deg"),
+        "peri_time": _to_float(elems.get("tp"), unit="d"),
+        "class": orbit.get("class") or objinfo.get("class"),
+        "soln_date": orbit.get("soln_date"),
+        "condition_code": orbit.get("condition_code"),
+        "rms": _to_float(orbit.get("rms")),
+        "two_body": orbit.get("two_body"),
+        "A1": _to_float(mpars.get("A1"), unit="au / d2"),
+        "A2": _to_float(mpars.get("A2"), unit="au / d2"),
+        "A3": _to_float(mpars.get("A3"), unit="au / d2"),
+        "DT": _to_float(mpars.get("DT"), unit="d"),
+    }
+    return "ok", row, None
 
 
 def _fetch_orb_sbdb(
