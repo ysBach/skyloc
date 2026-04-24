@@ -371,7 +371,9 @@ def cols2bools_sbdb(
 
     def _convert2bool(colname, true_value):
         try:
-            if orb[colname].dtype == object or orb[colname].dtype == str:
+            # Convert string-like/object columns to boolean, while preserving
+            # already-boolean columns.
+            if not pd.api.types.is_bool_dtype(orb[colname]):
                 orb[colname] = orb[colname] == true_value
         except Exception as e:
             _exception(colname, e)
@@ -431,16 +433,40 @@ def sanitize_sbdb(orb, drop_unreliable=True, drop_impacted=True):
             warn(f"Fields {nocols} unavailable - skipping drop_unreliable")
         else:
             # absolutely no magnitude-related information
-            mask = np.all(
+            no_mag_mask = np.all(
                 pd.isna(orb[magfields].apply(pd.to_numeric, errors="coerce")), axis=1
             )
+            # `two_body` may be bool-like or string-like depending on input dtype.
+            two_body_col = orb["two_body"]
+            if pd.api.types.is_bool_dtype(two_body_col):
+                two_body_mask = two_body_col.fillna(False)
+            else:
+                two_body_mask = two_body_col == "T"
+            prefix_bad_mask = orb["prefix"].isin(["D", "X"])
+            soln_na_mask = pd.isna(orb["soln_date"])
+            soln_short_mask = orb["soln_date"].str.len() < 10
             # other unreliable fields
-            mask |= (
-                orb["prefix"].isin(["D", "X"])
-                | pd.isna(orb["soln_date"])
-                | (orb["soln_date"].str.len() < 10)
-                | ((orb["two_body"]) | (orb["two_body"] == "T"))
+            mask = (
+                no_mag_mask
+                | prefix_bad_mask
+                | soln_na_mask
+                | soln_short_mask
+                | two_body_mask
             )
+            if logger.isEnabledFor(logging.DEBUG):
+                def _count_true(arr):
+                    return int(np.asarray(pd.Series(arr).fillna(False), dtype=bool).sum())
+
+                logger.debug(
+                    "drop_unreliable counts | no_mag=%d prefix_DX=%d soln_na=%d "
+                    "soln_short=%d two_body=%d total=%d",
+                    _count_true(no_mag_mask),
+                    _count_true(prefix_bad_mask),
+                    _count_true(soln_na_mask),
+                    _count_true(soln_short_mask),
+                    _count_true(two_body_mask),
+                    _count_true(mask),
+                )
     # soln_date len is for those shorter than "yyyy-mm-dd"; ex: "None"
     if drop_impacted:
         if "pdes" not in orb.columns and "desig" not in orb.columns:
@@ -448,6 +474,12 @@ def sanitize_sbdb(orb, drop_unreliable=True, drop_impacted=True):
         else:
             _col = "pdes" if "pdes" in orb.columns else "desig"
             _mask = orb[_col].isin(IMPACTED)
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    "drop_impacted count (%s in IMPACTED)=%d",
+                    _col,
+                    int(np.asarray(pd.Series(_mask).fillna(False), dtype=bool).sum()),
+                )
             mask = _mask if mask is None else mask | _mask
 
     if mask is not None:
