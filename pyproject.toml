@@ -48,6 +48,7 @@ full = [
 [project.scripts]
 filter-ephem = "skyloc.cli.filter_ephem:filter_ephem_cli"
 query-horizons = "skyloc.cli.query_horizons:query_horizons_cli"
+calc-ephem = "skyloc.cli.calc_ephem:calc_ephem_cli"
 ephem2plotly = "skyloc.cli.plot_ephem:ephem2plotly_cli"
 
 
