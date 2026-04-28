@@ -5,89 +5,14 @@ saves the result as a Parquet file (optionally compacted), and
 optionally plots an interactive HTML.
 """
 
-import re
 import sys
 
 import click
 
-
-_DEFAULT_DEPOCH = 10000
-
-
-def _parse_horizons_step(step):
-    """Parse fixed-duration Horizons step strings into an astropy TimeDelta."""
-    from astropy import units as u
-    from astropy.time import TimeDelta
-
-    match = re.fullmatch(
-        r"\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))\s*([A-Za-z]+)\s*", step
-    )
-    if match is None:
-        return None
-
-    value = float(match.group(1))
-    unit = match.group(2).lower()
-    unit_map = {
-        "s": u.s,
-        "sec": u.s,
-        "secs": u.s,
-        "second": u.s,
-        "seconds": u.s,
-        "m": u.min,
-        "min": u.min,
-        "mins": u.min,
-        "minute": u.min,
-        "minutes": u.min,
-        "h": u.hour,
-        "hr": u.hour,
-        "hrs": u.hour,
-        "hour": u.hour,
-        "hours": u.hour,
-        "d": u.day,
-        "day": u.day,
-        "days": u.day,
-        "w": u.week,
-        "week": u.week,
-        "weeks": u.week,
-    }
-    if unit not in unit_map:
-        return None
-    if value <= 0:
-        raise ValueError("step must be positive")
-    return TimeDelta(value * unit_map[unit])
-
-
-def _epochs_from_range(
-    start, stop, step, *, in_tdb=False, depoch=_DEFAULT_DEPOCH
-):
-    """Build Horizons epochs, falling back to a **JD list for long ranges**."""
-    from astropy import units as u
-    from astropy.time import Time
-    from erfa import ErfaWarning
-    import numpy as np
-    import warnings
-
-    step_delta = _parse_horizons_step(step)
-    if step_delta is None:
-        return {"start": start, "stop": stop, "step": step}
-
-    scale = "tdb" if in_tdb else "utc"
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", ErfaWarning)
-        start_time = Time(start, scale=scale)
-        stop_time = Time(stop, scale=scale)
-        duration = stop_time - start_time
-        n_intervals = int(duration.to_value(u.s) // step_delta.to_value(u.s))
-
-        if n_intervals < 0:
-            raise ValueError("stop must be later than or equal to start")
-
-        epoch_count = n_intervals + 1
-        if epoch_count <= depoch:
-            return {"start": start, "stop": stop, "step": step}
-
-        epoch_offsets = np.arange(epoch_count) * step_delta
-        return (start_time + epoch_offsets).jd.tolist()
+from ._ephem_common import (
+    DEFAULT_DEPOCH as _DEFAULT_DEPOCH,
+    epochs_from_range,
+)
 
 
 @click.command(name="query-horizons")
@@ -197,12 +122,10 @@ def query_horizons_cli(
             from datetime import datetime, timezone
 
             now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
-            if start is None:
-                start = now_iso
-            if stop is None:
-                stop = now_iso
+            start = now_iso if start is None else start
+            stop = now_iso if stop is None else stop
         try:
-            epochs = _epochs_from_range(
+            epochs = epochs_from_range(
                 start,
                 stop,
                 step,
