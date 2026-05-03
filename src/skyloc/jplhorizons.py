@@ -26,6 +26,49 @@ def iterator(it):
         return it
 
 
+def _wrap_pm180_deg(angle):
+    """Wrap angle(s) in degrees to the [-180, 180) range."""
+    return (angle + 180.0) % 360.0 - 180.0
+
+
+def _horizons_ephemerides_to_compare(eph):
+    """Convert a Horizons ephemerides table to skyloc's comparison schema."""
+    colmaps = {
+        "datetime_jd": "jd_utc",
+        "RA": "ra",
+        "DEC": "dec",
+        "alpha_true": "alpha",
+        "RA_rate": "racosdec_rate",
+        "DEC_rate": "dec_rate",
+        "r": "r_hel",
+        "delta": "r_obs",
+        "EclLon": "hel_ecl_lon",
+        "EclLat": "hel_ecl_lat",
+        "ObsEclLon": "obs_ecl_lon",
+        "ObsEclLat": "obs_ecl_lat",
+        "V": "vmag",
+        "Tmag": "Tmag",
+        "Nmag": "Nmag",
+        "Sky_motion": "sky_motion",
+        "Sky_mot_PA": "sky_motion_pa",
+        "sunTargetPA": "sun_target_pa",
+    }
+    eph2compare = eph.to_pandas()
+    eph2compare = eph2compare.loc[
+        :, eph2compare.columns.isin(["datetime_jd"] + list(colmaps.keys()))
+    ]
+    eph2compare = eph2compare.rename(columns=colmaps)
+    eph2compare["racosdec_rate"] /= 60  # arcsec/h to arcsec/min
+    eph2compare["dec_rate"] /= 60  # arcsec/h to arcsec/min
+
+    if "sun_target_pa" in eph2compare.columns:
+        # Horizons delivers sunTargetPA in [0, 360). Wrap to [-180, 180) to
+        # match skyloc's signed East-of-North convention.
+        eph2compare["sun_target_pa"] = _wrap_pm180_deg(eph2compare["sun_target_pa"])
+
+    return eph2compare
+
+
 __all__ = [
     "download_jpl_de",
     "HorizonsSPKQuery",
@@ -571,30 +614,4 @@ def horizons_quick(
             eph.append(_query_ephemerides(obj))
         eph = vstack(eph)
 
-    colmaps = {
-        "datetime_jd": "jd_utc",
-        "RA": "ra",
-        "DEC": "dec",
-        "alpha_true": "alpha",
-        "RA_rate": "racosdec_rate",
-        "DEC_rate": "dec_rate",
-        "r": "r_hel",
-        "delta": "r_obs",
-        "EclLon": "hel_ecl_lon",
-        "EclLat": "hel_ecl_lat",
-        "ObsEclLon": "obs_ecl_lon",
-        "ObsEclLat": "obs_ecl_lat",
-        "V": "vmag",
-        "Tmag": "Tmag",
-        "Nmag": "Nmag",
-        "Sky_motion": "sky_motion",
-        "Sky_mot_PA": "sky_motion_pa",
-    }
-    eph2compare = eph.to_pandas()
-    eph2compare = eph2compare.loc[
-        :, eph2compare.columns.isin(["datetime_jd"] + list(colmaps.keys()))
-    ]
-    eph2compare = eph2compare.rename(columns=colmaps)
-    eph2compare["racosdec_rate"] /= 60  # arcsec/h to arcsec/min
-    eph2compare["dec_rate"] /= 60  # arcsec/h to arcsec/min
-    return eph, eph2compare
+    return eph, _horizons_ephemerides_to_compare(eph)
