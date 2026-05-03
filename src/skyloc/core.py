@@ -13,9 +13,9 @@ from .keteutils.propagate import (
     make_nongravs_models,
     replace_loaded_with_spice,
 )
-from .keteutils._util import get_kete_loaded_objects
 from .keteutils import (
     get_default_spice_targets,
+    get_spice_asteroid_desigs,
     map_spice_name_to_desig,
     KETE_ASTEROIDS_PHYSICS,
 )
@@ -26,6 +26,7 @@ from .utils import listmask, tdb2utc
 logger = logging.getLogger(__name__)
 
 __all__ = ["locator_twice", "SSOLocator", "SpiceLocator", "StarLocator", "calc_ephems"]
+
 
 
 def locator_twice(
@@ -42,7 +43,7 @@ def locator_twice(
     add_jds=True,
     non_gravs=[True, True],
     calc_ephems_crude=False,
-    use_spice_for_loaded=(False, False),
+    use_spice_for_loaded=(True, True),
 ):
     """Simple utility function to run SSOLocator twice
 
@@ -99,9 +100,9 @@ def locator_twice(
         Default is `False`.
 
     use_spice_for_loaded : tuple of bool, optional
-        A 2-tuple indicating whether to use SPICE kernels for planets (and
-        large asteroids loaded in kete) in the first and second FOV state
-        check. Default is ``(False, False)``.
+        A 2-tuple indicating whether to use SPICE kernels to re-insert
+        large asteroids loaded in kete after the n-body FOV state check.
+        Default is ``(True, True)``.
 
     Notes
     -----
@@ -144,12 +145,16 @@ def locator_twice(
             add_obsid=add_obsid, drop_obsindex=drop_obsindex, add_jds=add_jds
         )
 
+    sl2_orb = sl1.orb.loc[sl1.orb_infov_mask].copy()
+    sl2_spice_orb = sl1._spice_asteroid_orb.loc[sl1.spice_asteroid_infov_mask].copy()
+
     sl2 = SSOLocator(
         fovs=sl1.fovc_hasobj,
-        orb=sl1.orb.loc[sl1.orb_infov_mask].copy(),
+        orb=sl2_orb,
         simstates=simstates,
         non_gravs=non_gravs[1],
         drop_major_asteroids=drop_major_asteroids,
+        spice_asteroid_orb=sl2_spice_orb if len(sl2_spice_orb) > 0 else None,
     )
     sl2.propagate_n_body(
         jd0=jd0[1],
@@ -608,6 +613,7 @@ class SSOLocator(Locator):
         non_gravs=True,
         copy_orb=False,
         drop_major_asteroids=True,
+        spice_asteroid_orb=None,
     ):
         """
         Parameters
@@ -619,8 +625,11 @@ class SSOLocator(Locator):
             Orbit file with columns of orbital elements. See
             `query.fetch_orb()`.
 
-        simstates : `~kete.SimultaneousStates`, path-like, optional
-            If provided, use it as the initial states for propagation.
+        simstates : `~kete.SimultaneousStates`, path-like, or `None`, optional
+            Pre-propagated states to use as starting points. Accepts a
+            `kete.SimultaneousStates` object or a path to a parquet file
+            saved by `kete.SimultaneousStates.save_parquet`. If `None`,
+            `propagate_n_body` must be called before `fov_state_check`.
             Default is `None`.
 
         non_gravs : list, bool, optional
@@ -636,17 +645,39 @@ class SSOLocator(Locator):
             If `True`, copy the `orb` DataFrame. Default is `False`.
 
         drop_major_asteroids : bool, optional
-            If `True`, drop major asteroids (those loaded in kete) from the
-            `orb`.
+            If `True`, the kete-loaded asteroids (1 Ceres, 2 Pallas,
+            4 Vesta, 10 Hygiea, 704 Interamnia, as of kete v.1.1) are dropped
+            from `orb` before n-body propagation. Their orbits are stored in
+            `self._spice_asteroid_orb` and checked via SPICE in
+            `fov_state_check` (when `use_spice_for_loaded=True`).
             Default is `True`.
+
+        spice_asteroid_orb : `pandas.DataFrame` or `None`, optional
+            Orbit rows for the SPICE-loadable asteroids, used instead of
+            extracting them automatically from `orb`. Useful in the second
+            pass of `locator_twice` to pass an already-filtered subset.
+            If `None`, rows are extracted from `orb` by designation.
+            Default is `None`.
         """
         super().__init__(fovs)
         if copy_orb:
             orb = orb.copy()
         self._validate_orb(orb)
+        self._drop_major_asteroids = drop_major_asteroids
+
+        spice_mask = orb["desig"].isin(get_spice_asteroid_desigs())
+        if spice_asteroid_orb is not None:
+            self._spice_asteroid_orb = spice_asteroid_orb
+        else:
+            self._spice_asteroid_orb = orb.loc[spice_mask].copy()
+        self._spice_asteroid_sbdbdesigs = self._spice_asteroid_orb["desig"].tolist()
+        self._spice_asteroid_spkids = [
+            str(KETE_ASTEROIDS_PHYSICS[desig]["spkid"])
+            for desig in self._spice_asteroid_sbdbdesigs
+        ]
+
         if drop_major_asteroids:
-            cache = get_kete_loaded_objects()
-            orb = orb[~orb.desig.isin(cache["asteroids"])]
+            orb = orb.loc[~spice_mask]
         self._orb = orb
 
         if isinstance(non_gravs, bool):
@@ -663,9 +694,9 @@ class SSOLocator(Locator):
         else:
             try:
                 self.jd0 = simstates.jd
-                self.states_propagated_jd0 = simstates
+                self.states_propagated_jd0 = simstates.states
             except AttributeError:
-                # simstates in path like
+                # simstates is path-like
                 simstates = kete.SimultaneousStates.load_parquet(simstates)
                 self.jd0 = simstates.jd
                 self.states_propagated_jd0 = simstates.states
@@ -767,18 +798,29 @@ class SSOLocator(Locator):
             states0 = kete.SimultaneousStates.load_parquet(output).states
             logger.debug("Loaded cached states from %s", output)
         else:
-            states0 = kete.propagate_n_body(
-                listmask(self.states_from_orb, objmask),
+            n_states = len(self.states_from_orb)
+            if objmask is None:
+                selected_mask = np.ones(n_states, dtype=bool)
+            else:
+                selected_mask = np.asarray(objmask, dtype=bool)
+                if len(selected_mask) != n_states:
+                    raise ValueError(
+                        f"{len(selected_mask)=} does not match number of objects {n_states}"
+                    )
+
+            states0 = list(kete.propagate_n_body(
+                listmask(self.states_from_orb, selected_mask),
                 jd=jd0,
                 include_asteroids=include_asteroids,
-                non_gravs=listmask(self.non_gravs, objmask),
+                non_gravs=listmask(self.non_gravs, selected_mask),
                 suppress_errors=suppress_errors,
-            )
+            ))
             logger.info("Propagated %d states to JD %.2f", len(states0), jd0)
 
-        # Replace loaded asteroids with SPICE states to avoid self-impact issues
-        # This runs ALWAYS (whether loaded from cache or freshly computed)
-        if include_asteroids:
+        # When drop_major_asteroids=False, the user wants to see raw n-body NaN.
+        # When drop_major_asteroids=True, the 5 loaded asteroids are not in orb,
+        # so this is a no-op safety net in case any slip through from cache.
+        if include_asteroids and self._drop_major_asteroids:
             states0 = replace_loaded_with_spice(states0, jd0)
 
         # Save to output file if requested (and not loaded from cache)
@@ -796,6 +838,7 @@ class SSOLocator(Locator):
         dt_limit=3.0,
         include_asteroids=False,
         use_spice_for_loaded=True,
+        include_planets=False,
         spice_targets=None,
     ):
         """Check which objects are in the FOVs after propagation.
@@ -807,69 +850,99 @@ class SSOLocator(Locator):
             Default is ``3.0`` days.
 
         include_asteroids : bool, optional
-            If `True`, include asteroids in the check. Default is `False`.
+            If `True`, pass `include_asteroids=True` to
+            `kete.fov.fov_state_check`, enabling perturbation by the 5 large
+            kete-loaded asteroids during the 2-body refinement step.
+            Default is `False`.
 
         use_spice_for_loaded : bool, optional
-            If `True`, use SPICE kernels (via `fov_spice_check`) for planets
-            and the 5 large asteroids that kete uses as perturbers. This avoids
-            NaN results from n-body propagation for these objects.
-            Default is `True`.
+            If `True` and `drop_major_asteroids=True`, use SPICE kernels to
+            locate the kete-loaded asteroids (Ceres, Pallas, Vesta, Hygiea,
+            Interamnia) in the FOVs. Has no effect when
+            `drop_major_asteroids=False` because those asteroids were already
+            propagated n-body and will be found (or not) via the n-body FOV
+            check. Default is `True`.
+
+        include_planets : bool, optional
+            If `True`, also check planets via SPICE using
+            `get_default_spice_targets(include_planets=True)`.
+            Default is `False`.
 
         spice_targets : list of str, optional
-            Additional SPICE targets to check beyond the default planets and
-            large asteroids. These will be checked via `fov_spice_check`.
+            Additional SPICE-resolvable target names or IDs to check via
+            `kete.fov.fov_spice_check`. Deduplicated against other targets.
             Default is `None`.
 
         Notes
         -----
+        Sets the following attributes after the check:
+
         self.fov_check_simstates : list of `kete.SimultaneousStates`
-            The states of the objects in the FOVs after propagation.
-            Basically the output of `kete.fov.fov_state_check`.
-
-        self.fov_check_fov2objs : dict
-            A dictionary mapping FOV designations to lists of object designations
-            that are in the FOVs.
-
-        self.fov_check_objids : list of str
-            A list of unique object designations that are in the FOVs.
+            Combined n-body and SPICE results (all FOVs with any object).
 
         self.fov_check_spice_simstates : list of `kete.SimultaneousStates`
-            SPICE-derived states (only populated if `use_spice_for_loaded=True`).
-        """
-        simstas = kete.fov.fov_state_check(
-            self.states_propagated_jd0,
-            self.fovc.fovlist,
-            dt_limit=dt_limit,
-            include_asteroids=include_asteroids,
-        )
+            SPICE-only results; empty list if no SPICE targets were checked.
 
-        # Handle SPICE-based objects (planets only)
-        # Note: Loaded asteroids are already SPICE-replaced in propagate_n_body,
-        # so we don't need fov_spice_check for them (which causes fuzzy matching issues).
-        spice_simstas = []
-        if use_spice_for_loaded:
-            # Only check planets - asteroids already handled via n-body replacement
-            planet_targets = get_default_spice_targets(
-                include_planets=True, include_asteroids=False
+        self.fov_check_fov2objs : dict
+            Maps each FOV designation (str) to a list of object designations
+            visible in that FOV.
+
+        self.fov_check_objids : list of str
+            Unique object designations visible in at least one FOV.
+
+        self.fov_mask_hasobj : np.ndarray of bool
+            Boolean mask over `self.fovc` selecting FOVs that contain objects.
+
+        self.fovc_hasobj : FOVCollection
+            Sub-collection of FOVs that contain at least one object.
+
+        self.orb_infov_mask : np.ndarray of bool
+            Boolean mask over `self.orb` for objects found in any FOV.
+
+        self.spice_asteroid_infov_mask : np.ndarray of bool
+            Boolean mask over `self._spice_asteroid_orb` for SPICE asteroids
+            found in any FOV.
+        """
+        if self.states_propagated_jd0 is not None:
+            simstas = kete.fov.fov_state_check(
+                self.states_propagated_jd0,
+                self.fovc.fovlist,
+                dt_limit=dt_limit,
+                include_asteroids=include_asteroids,
             )
-            targets_to_check = list(planet_targets)
+        else:
+            simstas = []
+
+        # Handle loaded asteroids that were intentionally dropped before n-body
+        # propagation. Use asteroid SPK IDs to avoid name/number ambiguity where
+        # "1" resolves to Mercury barycenter instead of Ceres.
+        spice_simstas = []
+        if use_spice_for_loaded or include_planets or spice_targets is not None:
+            spice2check = []
+
+            if use_spice_for_loaded:
+                if self._drop_major_asteroids:
+                    spice2check.extend(self._spice_asteroid_spkids)
+
+            if include_planets:
+                spice2check.extend(
+                    get_default_spice_targets(include_planets=True, include_asteroids=False)
+                )
 
             # Add any additional user-specified targets
             if spice_targets is not None:
-                targets_to_check.extend(spice_targets)
+                spice2check.extend(spice_targets)
 
-            # Run fov_spice_check for each target (planets use SPICE IDs, which work)
-            for target in targets_to_check:
-                try:
-                    result = kete.fov.fov_spice_check(target, self.fovc.fovlist)
-                    spice_simstas.extend(result)
-                except Exception as e:
-                    logger.debug("fov_spice_check failed for %s: %s", target, e)
-                    continue
+            spice2check = list(dict.fromkeys(spice2check))
+            try:
+                result = kete.fov.fov_spice_check(spice2check, self.fovc.fovlist)
+                spice_simstas.extend(result)
+            except Exception as e:
+                logger.debug("fov_spice_check failed: %s", e)
 
             if spice_simstas:
                 logger.info(
-                    "SPICE check found %d SimultaneousStates for planets",
+                    "SPICE check found %d SimultaneousStates for loaded targets",
                     len(spice_simstas),
                 )
 
@@ -903,6 +976,9 @@ class SSOLocator(Locator):
 
         # objects in at least one of FOV
         self.orb_infov_mask = self.orb["desig"].isin(uniq_objids)
+        self.spice_asteroid_infov_mask = self._spice_asteroid_orb["desig"].isin(
+            uniq_objids
+        )
 
         logger.info("FOV check: %d objects in %d FOVs", len(uniq_objids), len(fov2objs))
 
@@ -932,8 +1008,16 @@ class SSOLocator(Locator):
 
         """
         if self.fov_check_simstates:
+            spice_desigs = set(self._spice_asteroid_orb["desig"])
+            ephem_orb = pd.concat(
+                [
+                    self.orb.loc[~self.orb["desig"].isin(spice_desigs)],
+                    self._spice_asteroid_orb,
+                ],
+                ignore_index=True,
+            )
             eph, obsindex = calc_ephems(
-                self.orb,
+                ephem_orb,
                 self.fov_check_simstates,
                 gpar_default=gpar_default,
                 sort_by=sort_by,
