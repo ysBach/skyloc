@@ -22,7 +22,7 @@ EPH_DTYPES_BASE : dict
     - ``racosdec_rate``, ``dec_rate``: ±0.5 mas/min precision, covers ±32.7675 "/min
     - ``sky_motion``: ±0.5 mas/min precision, 0-65.535 "/min
     - ``sky_motion_pa``: ±10" precision, covers -180 to +180 deg
-    - ``sun_pa``: ±10" precision, covers -180 to +180 deg
+    - ``sun_target_pa``: ±10" precision, covers -180 to +180 deg
     - ``vmag``: ±0.25 mmag precision, covers 0-32.76 mag
 
 DEFAULT_COORD_MAP : dict
@@ -76,7 +76,7 @@ __all__ = [
 #   - r_hel, r_obs: 1.e-3au=±0.2 LD precision (~±75_000 km), covers 0-65.535 AU
 #   - racosdec_rate, dec_rate: ±0.5 mas/min precision, covers ±32.7675 "/min
 #   - sky_motion: ±0.5 mas/min precision, covers 0-65.535 "/min
-#   - sky_motion_pa, sun_pa: ±10" precision, covers -180 to +180 deg
+#   - sky_motion_pa, sun_target_pa: ±10" precision, covers -180 to +180 deg
 #   - vmag: ±0.25 mmag precision, covers 0-32.76 mag
 # EPH_DTYPES_BASE = {
 #     "alpha": (360, "uint16", 65535, "float64"),
@@ -86,7 +86,7 @@ __all__ = [
 #     "dec_rate": (1000, "int16", 0, "float64"),
 #     "sky_motion": (1000, "uint16", 0, "float64"),
 #     "sky_motion_pa": (180, "int16", 32767, "float64"),
-#     "sun_pa": (180, "int16", 32767, "float64"),
+#     "sun_target_pa": (180, "int16", 32767, "float64"),
 #     "vmag": (2000, "uint16", 0, "float64"),
 # }
 EPH_DTYPES_BASE = {
@@ -97,7 +97,7 @@ EPH_DTYPES_BASE = {
     "dec_rate": (1, "float32", 0, "float64"),
     "sky_motion": (1, "float32", 0, "float64"),
     "sky_motion_pa": (180, "int16", 32767, "float64"),
-    "sun_pa": (180, "int16", 32767, "float64"),
+    "sun_target_pa": (180, "int16", 32767, "float64"),
     "vmag": (1, "float32", 0, "float64"),
 }
 
