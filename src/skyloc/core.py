@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["locator_twice", "SSOLocator", "SpiceLocator", "StarLocator", "calc_ephems"]
 
+_EPHEM_ORB_COLS = ["H", "G", "M1", "M2", "K1", "K2", "PC"]
 
 
 def locator_twice(
@@ -925,7 +926,10 @@ class SSOLocator(Locator):
             Boolean mask over `self._spice_asteroid_orb` for SPICE asteroids
             found in any FOV.
         """
-        if self.states_propagated_jd0 is not None:
+        if (
+            self.states_propagated_jd0 is not None
+            and len(self.states_propagated_jd0) > 0
+        ):
             simstas = kete.fov.fov_state_check(
                 self.states_propagated_jd0,
                 self.fovc.fovlist,
@@ -1115,20 +1119,15 @@ def _calc_ephem(
     # Ensure designations match orb (e.g., "vesta" -> "4")
     geoms["desig"] = [map_spice_name_to_desig(d) for d in geoms["desig"]]
 
-    # Align orb to geoms to ensure 1-to-1 correspondence for magnitude calculation
-    # Only keep orbital elements for objects present in geoms, in the order of geoms.
-    # Note: orb["desig"] must be unique for correct reindexing.
-    if orb["desig"].duplicated().any():
-        logger.warning(
-            "Duplicate designations found in orbit file. Magnitude calculation may be incorrect."
-        )
-        orb = orb.drop_duplicates(subset="desig")
+    orb_indexed = _ephem_orb_indexed(orb)
+    geoms_desig = np.asarray(geoms["desig"])
 
-    # Check for matches
-    available_desigs = set(orb["desig"])
-    has_orb_mask = np.array([d in available_desigs for d in geoms["desig"]])
+    # Check for matches. get_indexer() does one vectorized lookup against the
+    # prebuilt designation index instead of rebuilding a set per FOV.
+    orb_locs = orb_indexed.index.get_indexer(geoms_desig)
+    has_orb_mask = orb_locs >= 0
 
-    unmatched = [d for d in geoms["desig"] if d not in available_desigs]
+    unmatched = geoms_desig[~has_orb_mask].tolist()
     if unmatched:
         logger.debug(
             "Objects without orbit data (SPICE-only, will have NaN vmag): %s...",
@@ -1140,33 +1139,23 @@ def _calc_ephem(
     vmag = np.full(n_objects, np.nan)
 
     # Only calculate magnitudes for objects with orbit data
-    if any(has_orb_mask):
+    if has_orb_mask.any():
         # Get indices and designations of objects with orbit data
-        orb_desigs = [d for i, d in enumerate(geoms["desig"]) if has_orb_mask[i]]
         orb_indices = np.where(has_orb_mask)[0]
-
-        # Reindex orb to match the subset with orbit data
-        orb_indexed = orb.set_index("desig")
-        orb_aligned = orb_indexed.reindex(orb_desigs)
+        orb_aligned = orb_indexed.iloc[orb_locs[has_orb_mask]]
 
         # Extract parameters for magnitude calculation
-        g_vals = orb_aligned["G"].fillna(gpar_default).to_numpy()
-        h_vals = orb_aligned["H"].to_numpy()
-        m1 = orb_aligned.get(
-            "M1", pd.Series(np.nan, index=orb_aligned.index)
-        ).to_numpy()
-        m2 = orb_aligned.get(
-            "M2", pd.Series(np.nan, index=orb_aligned.index)
-        ).to_numpy()
-        k1 = orb_aligned.get(
-            "K1", pd.Series(np.nan, index=orb_aligned.index)
-        ).to_numpy()
-        k2 = orb_aligned.get(
-            "K2", pd.Series(np.nan, index=orb_aligned.index)
-        ).to_numpy()
-        pc = orb_aligned.get(
-            "PC", pd.Series(np.nan, index=orb_aligned.index)
-        ).to_numpy()
+        if "G" in orb_aligned.columns:
+            g_vals = orb_aligned["G"].fillna(gpar_default).to_numpy()
+        else:
+            g_vals = np.full(len(orb_aligned), gpar_default)
+
+        h_vals = _ephem_orb_values(orb_aligned, "H")
+        m1 = _ephem_orb_values(orb_aligned, "M1")
+        m2 = _ephem_orb_values(orb_aligned, "M2")
+        k1 = _ephem_orb_values(orb_aligned, "K1")
+        k2 = _ephem_orb_values(orb_aligned, "K2")
+        pc = _ephem_orb_values(orb_aligned, "PC")
 
         # Extract geometry for these objects
         alpha_sub = np.array(geoms["alpha"])[orb_indices]
@@ -1202,6 +1191,45 @@ def _calc_ephem(
         geoms = geoms.sort_values(sort_by).reset_index(drop=True)
 
     return geoms, orb
+
+
+def _ephem_orb_indexed(orb):
+    """Return the minimal orbit table used by ephemeris magnitude calculations."""
+    if "desig" not in orb.columns:
+        if orb.index.has_duplicates:
+            logger.warning(
+                "Duplicate designations found in orbit file. "
+                "Magnitude calculation may be incorrect."
+            )
+            return orb.loc[~orb.index.duplicated(keep="first")]
+        return orb
+
+    data = {}
+    for col in _EPHEM_ORB_COLS:
+        if col in orb.columns:
+            data[col] = orb[col].to_numpy(copy=False)
+
+    orb_indexed = pd.DataFrame(
+        data,
+        index=pd.Index(orb["desig"].to_numpy(copy=False), name="desig"),
+        copy=False,
+    )
+
+    if orb_indexed.index.has_duplicates:
+        logger.warning(
+            "Duplicate designations found in orbit file. "
+            "Magnitude calculation may be incorrect."
+        )
+        orb_indexed = orb_indexed.loc[~orb_indexed.index.duplicated(keep="first")]
+
+    return orb_indexed
+
+
+def _ephem_orb_values(orb, col, fill_value=np.nan):
+    """Return an orbit column, defaulting only over the aligned subset."""
+    if col in orb.columns:
+        return orb[col].to_numpy()
+    return np.full(len(orb), fill_value)
 
 
 def calc_ephems(
@@ -1318,16 +1346,7 @@ def calc_ephems(
             The Julian date (TDB) and (UTC) in days. (only if `add_jds` is `True`)
     """
     dfs = []
-    try:
-        _orb = orb[["desig", "H", "G", "M1", "M2", "K1", "K2", "PC"]].copy()
-    except KeyError:
-        # Some columns are missing, add nan:
-        _orb = orb.copy()
-        for col in ["H", "G", "M1", "M2", "K1", "K2", "PC"]:
-            if col not in _orb.columns:
-                _orb[col] = np.nan
-        _orb = _orb[["desig", "H", "G", "M1", "M2", "K1", "K2", "PC"]]
-
+    orb_indexed = _ephem_orb_indexed(orb)
     obsids = []
 
     if isinstance(simulstates, kete.SimultaneousStates):
@@ -1336,7 +1355,7 @@ def calc_ephems(
 
     for idx, _simulstates in enumerate(list(simulstates)):
         eph, _ = _calc_ephem(
-            _orb,
+            orb_indexed,
             _simulstates,
             gpar_default=gpar_default,
             rates_in_arcsec_per_min=rates_in_arcsec_per_min,
