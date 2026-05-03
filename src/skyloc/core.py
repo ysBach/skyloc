@@ -737,6 +737,7 @@ class SSOLocator(Locator):
     def propagate_n_body(
         self,
         jd0=np.mean,
+        jd0_tol=1e-5,
         suppress_errors=True,
         include_asteroids=False,
         objmask=None,
@@ -752,6 +753,14 @@ class SSOLocator(Locator):
             `np.mean`), it will be applied to the `.observer.jd` of the FOVs
             (e.g., `np.mean([fov.observer.jd for fov in self.fovc.fovlist])`).
             Default is `np.mean`, which uses the mean JD of the FOVs.
+
+        jd0_tol : float, optional
+            The tolerance for the JD of the FOVs in days. If the
+            `self.states_propagated_jd0` is within `jd0_tol` of the target
+            `jd0`, the propagation will be skipped. This is to avoid
+            unnecessary propagation when the states are already close enough to
+            the target epoch.
+            Default is `1e-5` (day), i.e., 0.864 odseconds.
 
         suppress_errors : bool, optional
             If `True`, errors during propagation will return NaN for the relevant
@@ -790,6 +799,19 @@ class SSOLocator(Locator):
         if not isinstance(jd0, (float, int)):
             # Use the mean JD of the FOVs
             jd0 = jd0(self.fovc.fov_jds)
+
+        # Skip propagation if simstates already at target epoch
+        if (
+            self.states_propagated_jd0 is not None
+            and self.jd0 is not None
+            and abs(self.jd0 - jd0) < jd0_tol
+            and objmask is None
+        ):
+            logger.info(
+                "Skipping propagation: simstates already at JD %.2f (%d states)",
+                jd0, len(self.states_propagated_jd0),
+            )
+            return
 
         # Determine whether to compute fresh or load from cache
         load_from_cache = output_exists and not overwrite
