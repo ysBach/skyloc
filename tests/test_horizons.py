@@ -168,6 +168,39 @@ class TestHorizonsVec2KeteState:
 class TestHorizonsQuick:
     """Test horizons_quick utility function."""
 
+    def test_sun_target_pa_converted_to_sun_pa(self):
+        """Horizons sunTargetPA is reversed for skyloc's sun_pa convention."""
+        from skyloc.jplhorizons import _horizons_ephemerides_to_compare
+
+        eph = Table(
+            {
+                "datetime_jd": [2460600.5, 2460601.5, 2460602.5],
+                "RA": [1.0, 2.0, 3.0],
+                "DEC": [4.0, 5.0, 6.0],
+                "alpha_true": [7.0, 8.0, 9.0],
+                "RA_rate": [60.0, 120.0, 180.0],
+                "DEC_rate": [-60.0, -120.0, -180.0],
+                "r": [1.0, 1.1, 1.2],
+                "delta": [2.0, 2.1, 2.2],
+                "EclLon": [10.0, 20.0, 30.0],
+                "EclLat": [0.1, 0.2, 0.3],
+                "ObsEclLon": [40.0, 50.0, 60.0],
+                "ObsEclLat": [0.4, 0.5, 0.6],
+                "V": [15.0, 16.0, 17.0],
+                "Sky_motion": [0.5, 0.6, 0.7],
+                "Sky_mot_PA": [70.0, 80.0, 90.0],
+                "sunTargetPA": [10.0, 190.0, 350.0],
+            }
+        )
+
+        eph2compare = _horizons_ephemerides_to_compare(eph)
+
+        assert "sun_pa" in eph2compare.columns
+        assert "sun_target_pa" not in eph2compare.columns
+        np.testing.assert_allclose(eph2compare["sun_pa"], [-170.0, 10.0, 170.0])
+        np.testing.assert_allclose(eph2compare["racosdec_rate"], [1.0, 2.0, 3.0])
+        np.testing.assert_allclose(eph2compare["dec_rate"], [-1.0, -2.0, -3.0])
+
     @pytest.mark.network
     @pytest.mark.slow
     def test_basic_query(self):
