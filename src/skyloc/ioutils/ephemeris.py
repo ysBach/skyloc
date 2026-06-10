@@ -106,6 +106,7 @@ DEFAULT_COORD_MAP = {
     "eqj2000": ("ra", "dec"),
     "helecl": ("hel_ecl_lon", "hel_ecl_lat"),
     "obsecl": ("obs_ecl_lon", "obs_ecl_lat"),
+    "galactic": ("glx_lon", "glx_lat"),
 }
 
 

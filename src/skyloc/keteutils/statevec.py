@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 from ._kete_import import kete, require_kete
 from ._util import parse_frame
 
-__all__ = ["make_kete_state", "ecl2eq", "eq2ecl"]
+__all__ = ["make_kete_state", "ecl2eq", "eq2ecl", "eq2gal", "gal2eq"]
 
 # ---------------------------------------------------------------------------
 # Frame rotation constants (ecliptic <-> equatorial J2000)
@@ -29,6 +29,13 @@ _R_ECL2EQ = np.array(
 )
 # Equatorial J2000 -> ecliptic J2000: transpose (pure rotation, so R^-1 = R^T)
 _R_EQ2ECL = _R_ECL2EQ.T
+
+# Equatorial J2000 -> galactic (IAU 1958 / Hipparcos J2000 matrix)
+_R_EQ2GAL = np.array(
+    [[-0.0548755604162154, -0.8734370902348850, -0.4838350155487132],
+     [ 0.4941094278755837, -0.4448296299600112,  0.7469822444972189],
+     [-0.8676661490190047, -0.1980763734312015,  0.4559837761750669]]
+)
 
 
 def ecl2eq(xyz):
@@ -88,6 +95,46 @@ def eq2ecl(xyz):
     """
     xyz = np.asarray(xyz, dtype=float)
     return xyz @ _R_EQ2ECL.T
+
+
+def eq2gal(xyz):
+    """Rotate equatorial J2000 Cartesian coordinates to galactic.
+
+    Applies the IAU 1958 / Hipparcos J2000 rotation. Operates on plain numpy
+    arrays. Galactic longitude wrapping to [0, 360) is left to the caller;
+    this function only rotates the Cartesian vector.
+
+    Parameters
+    ----------
+    xyz : array_like, shape (..., 3)
+        Cartesian coordinates in the equatorial J2000 frame (any units).
+
+    Returns
+    -------
+    np.ndarray, shape (..., 3)
+        Coordinates in the galactic frame, same units as input.
+    """
+    xyz = np.asarray(xyz, dtype=float)
+    return xyz @ _R_EQ2GAL.T
+
+
+def gal2eq(xyz):
+    """Rotate galactic Cartesian coordinates to equatorial J2000.
+
+    Inverse of ``eq2gal``.
+
+    Parameters
+    ----------
+    xyz : array_like, shape (..., 3)
+        Cartesian coordinates in the galactic frame (any units).
+
+    Returns
+    -------
+    np.ndarray, shape (..., 3)
+        Coordinates in the equatorial J2000 frame, same units as input.
+    """
+    xyz = np.asarray(xyz, dtype=float)
+    return xyz @ _R_EQ2GAL
 
 
 def _state2list(states):

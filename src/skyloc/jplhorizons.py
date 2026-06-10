@@ -46,6 +46,8 @@ def _horizons_ephemerides_to_compare(eph):
         "EclLat": "hel_ecl_lat",
         "ObsEclLon": "obs_ecl_lon",
         "ObsEclLat": "obs_ecl_lat",
+        "GlxLon": "glx_lon",
+        "GlxLat": "glx_lat",
         "V": "vmag",
         "Tmag": "Tmag",
         "Nmag": "Nmag",

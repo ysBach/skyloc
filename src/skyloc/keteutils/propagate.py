@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 from ._constants import KETE_ASTEROIDS_PHYSICS
-from .statevec import ecl2eq
+from .statevec import ecl2eq, eq2gal
 
 logger = logging.getLogger(__name__)
 
@@ -302,6 +302,7 @@ def calc_geometries(
     do_radec=True,
     do_hel_ecl=True,
     do_obs_ecl=True,
+    do_galactic=True,
     rates_in_arcsec_per_min=True,
 ):
     """Calculate phase angle alpha, distances, and lon/lats.
@@ -317,13 +318,14 @@ def calc_geometries(
     center : int, optional
         The center of the light source. Default is 10 (Sun).
 
-    do_alpha, do_dists, do_radec, do_hel_ecl, do_obs_ecl : bool, optional
+    do_alpha, do_dists, do_radec, do_hel_ecl, do_obs_ecl, do_galactic : bool, optional
         If `True`, calculate the phase angle, heliocentric/observer-centric
         distances, right ascension and declination, heliocentric ecliptic
-        coordinates, and observer-centric ecliptic coordinates, respectively.
-        Default is `True` for all. Note that if `do_alpha=True`, distances
-        (r_hel, r_obs) are always computed and included in the output because
-        they are required for the phase angle calculation.
+        coordinates, observer-centric ecliptic coordinates, and galactic
+        coordinates, respectively. Default is `True` for all. Note that if
+        `do_alpha=True`, distances (r_hel, r_obs) are always computed and
+        included in the output because they are required for the phase angle
+        calculation.
 
     rates_in_arcsec_per_min : bool, optional
         If `True`, the rates of right ascension and declination will be
@@ -350,6 +352,8 @@ def calc_geometries(
         - obs_ecl_lons, obs_ecl_lats : np.ndarray
             The observer-centric ecliptic longitudes and latitudes in degrees
             (e.g., the observer is the Earth).
+        - glx_lon, glx_lat : np.ndarray
+            Galactic longitude (l, in [0, 360)) and latitude (b) in degrees.
         - sky_motion, sky_motion_pa : np.ndarray
             The apparent angular rate of the target in the plane-of-sky in
             degrees/day (or arcsec/min if `rates_in_arcsec_per_min` is `True`),
@@ -449,6 +453,14 @@ def calc_geometries(
         )
         xy_obs = np.hypot(obs2obj_xyz[:, 0], obs2obj_xyz[:, 1])
         geoms["obs_ecl_lat"] = np.rad2deg(np.arctan2(obs2obj_xyz[:, 2], xy_obs))
+
+    # Observer-centric galactic coordinates of the object
+    if do_galactic:
+        gal_xyz = eq2gal(ecl2eq(obs2obj_xyz))  # ecliptic -> equatorial -> galactic
+        lon = np.rad2deg(np.arctan2(gal_xyz[:, 1], gal_xyz[:, 0]))
+        geoms["glx_lon"] = np.mod(lon, 360.0)  # galactic l conventionally [0, 360)
+        xy_gal = np.hypot(gal_xyz[:, 0], gal_xyz[:, 1])
+        geoms["glx_lat"] = np.rad2deg(np.arctan2(gal_xyz[:, 2], xy_gal))
 
     # RA/Dec and rates from kete's built-in method (already vectorized)
     if do_radec:
