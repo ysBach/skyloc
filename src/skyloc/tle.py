@@ -5,7 +5,7 @@ import re
 import requests
 
 
-__all__ = ["fetch_tle_from_n2yo"]
+__all__ = ["fetch_tle_n2yo"]
 
 
 def fetch_tle_n2yo(norad_id: int) -> tuple[str, str]:
