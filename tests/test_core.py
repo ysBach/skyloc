@@ -1,19 +1,104 @@
-"""Tests for skyloc.core module - SSOLocator and related functions.
-
-Tests verify specific behaviors with known values for 15 Eunomia at
-JD 2460676.5 (2025-01-01).
-
-Reference state vectors from kete propagation:
-- Position: [0.0948511064, 2.2950080713, 0.2039276033] AU
-- Velocity: [-0.0116237533, 0.0023363467, -0.0020398849] AU/day
-"""
+"""Tests for skyloc.core module - SSOLocator and related functions."""
 
 import numpy as np
-import pytest
 import pandas as pd
+import pytest
 import kete
-from skyloc.core import SSOLocator, calc_ephems
+import skyloc.core as core_mod
+from skyloc.core import SSOLocator, SpiceLocator, StarLocator, calc_ephems
+from skyloc.keteutils import (
+    KETE_ASTEROIDS_PHYSICS,
+    KETE_PLANETS,
+    get_default_spice_targets,
+    get_spice_asteroid_desigs,
+    get_spice_asteroid_names,
+    is_spice_resolvable,
+)
 from skyloc.keteutils.fov import FOVCollection
+from tests.ephemeris_reference import (
+    DIST_ATOL_AU,
+    QUERY_ANGLE_ATOL_DEG,
+    QUERY_VEL_ATOL_AU_PER_DAY,
+    REFERENCE_TIMES_UTC,
+    SMALL_BODY_ORBITS,
+    _angle_delta_deg,
+    _sun_observer,
+    _to_tdb_jd,
+    _wide_fov,
+    reference_horizons_ephemeris,
+    reference_state,
+)
+
+
+CORE_STRICT_EPHEM_TARGETS = (
+    "earth",
+    "4",
+    "15",
+    "433",
+    "saturn_barycenter",
+)
+
+
+def _state_from_reference(utc_iso, target_key, desig=None):
+    ref = reference_state(utc_iso, target_key)
+    return kete.State(
+        desig=target_key.replace("_", " ") if desig is None else desig,
+        jd=_to_tdb_jd(utc_iso),
+        pos=kete.Vector(ref["pos"], frame=kete.Frames.Ecliptic),
+        vel=kete.Vector(ref["vel"], frame=kete.Frames.Ecliptic),
+        center_id=10,
+    )
+
+
+def _strict_core_ephemerides_from_reference_vectors(utc_iso):
+    """Calculate core SSOLocator ephemerides from hard-coded Horizons vectors."""
+    rows = {}
+    jd = _to_tdb_jd(utc_iso)
+
+    sun_fov = _wide_fov(_sun_observer(jd))
+    earth_loc = SSOLocator(
+        fovs=sun_fov,
+        orb=SMALL_BODY_ORBITS,
+        non_gravs=False,
+        drop_major_asteroids=False,
+    )
+    earth_loc.states_propagated_jd0 = [
+        _state_from_reference(utc_iso, "earth", desig="earth")
+    ]
+    earth_loc.fov_state_check(use_spice_for_loaded=False)
+    earth_loc.calc_ephems(
+        sort_by=None,
+        compact=False,
+        add_obsid=False,
+        drop_obsindex=False,
+        add_jds=True,
+    )
+    rows["earth"] = earth_loc.eph.iloc[0]
+
+    observer_state = _state_from_reference(utc_iso, "earth", desig="geocenter")
+    geo_loc = SSOLocator(
+        fovs=_wide_fov(observer_state),
+        orb=SMALL_BODY_ORBITS,
+        non_gravs=False,
+        drop_major_asteroids=False,
+    )
+    geo_loc.states_propagated_jd0 = [
+        _state_from_reference(utc_iso, key)
+        for key in ("4", "15", "433", "C/2025 A6", "saturn_barycenter")
+    ]
+    geo_loc.fov_state_check(use_spice_for_loaded=False)
+    geo_loc.calc_ephems(
+        sort_by=None,
+        compact=False,
+        add_obsid=False,
+        drop_obsindex=False,
+        add_jds=True,
+    )
+    for _, row in geo_loc.eph.iterrows():
+        key = "saturn_barycenter" if row["desig"] == "saturn barycenter" else row["desig"]
+        rows[key] = row
+
+    return rows
 
 
 class TestSSOLocatorInit:
@@ -94,12 +179,7 @@ class TestSSOLocatorStates:
 @pytest.mark.slow
 @pytest.mark.integration
 class TestSSOLocatorPropagation:
-    """Test SSOLocator propagation methods.
-
-    Reference: 15 Eunomia at JD 2460676.5 (2025-01-01)
-    Position: [0.0948511064, 2.2950080713, 0.2039276033] AU
-    Velocity: [-0.0116237533, 0.0023363467, -0.0020398849] AU/day
-    """
+    """Test SSOLocator propagation methods."""
 
     def test_propagate_n_body_sets_jd0(
         self, sample_orb_asteroid, sample_fovlist, sample_jd_tdb
@@ -143,344 +223,323 @@ class TestSSOLocatorPropagation:
         loc.propagate_n_body(jd0=sample_jd_tdb, suppress_errors=True)
         assert np.isclose(loc.states_propagated_jd0[0].jd, sample_jd_tdb, atol=1e-10)
 
-    def test_propagated_position_values(
-        self, sample_orb_asteroid, sample_fovlist, sample_jd_tdb
-    ):
-        """Propagated position should match reference values."""
-        loc = SSOLocator(fovs=sample_fovlist, orb=sample_orb_asteroid)
-        loc.propagate_n_body(jd0=sample_jd_tdb, suppress_errors=True)
-        state = loc.states_propagated_jd0[0]
-        pos = np.array([state.pos[0], state.pos[1], state.pos[2]])
-        # Reference: [0.0948511064, 2.2950080713, 0.2039276033] AU
-        expected = np.array([0.0948511064, 2.2950080713, 0.2039276033])
-        np.testing.assert_allclose(pos, expected, atol=1e-6)
+    @pytest.mark.parametrize(
+        "target_key",
+        ("15", "433", "C/2025 A6"),
+    )
+    def test_propagated_reference_orbits_match_horizons_vectors(self, target_key):
+        """Reference orbit rows propagate back to their hard-coded vectors."""
+        for utc_iso in REFERENCE_TIMES_UTC:
+            orb = SMALL_BODY_ORBITS.loc[SMALL_BODY_ORBITS["desig"] == target_key]
+            loc = SSOLocator(
+                fovs=_wide_fov(_sun_observer(_to_tdb_jd(utc_iso))),
+                orb=orb,
+                non_gravs=target_key == "C/2025 A6",
+                drop_major_asteroids=False,
+            )
+            loc.propagate_n_body(jd0=_to_tdb_jd(utc_iso), suppress_errors=True)
+            state = loc.states_propagated_jd0[0]
+            pos = np.array([state.pos[0], state.pos[1], state.pos[2]])
+            vel = np.array([state.vel[0], state.vel[1], state.vel[2]])
+            ref = reference_state(utc_iso, target_key)
 
-    def test_propagated_velocity_values(
-        self, sample_orb_asteroid, sample_fovlist, sample_jd_tdb
-    ):
-        """Propagated velocity should match reference values."""
-        loc = SSOLocator(fovs=sample_fovlist, orb=sample_orb_asteroid)
-        loc.propagate_n_body(jd0=sample_jd_tdb, suppress_errors=True)
-        state = loc.states_propagated_jd0[0]
-        vel = np.array([state.vel[0], state.vel[1], state.vel[2]])
-        # Reference: [-0.0116237533, 0.0023363467, -0.0020398849] AU/day
-        expected = np.array([-0.0116237533, 0.0023363467, -0.0020398849])
-        np.testing.assert_allclose(vel, expected, atol=1e-8)
+            np.testing.assert_allclose(
+                pos,
+                ref["pos"],
+                atol=DIST_ATOL_AU,
+                rtol=1e-10,
+                err_msg=f"{utc_iso} {target_key} position",
+            )
+            np.testing.assert_allclose(
+                vel,
+                ref["vel"],
+                atol=QUERY_VEL_ATOL_AU_PER_DAY,
+                rtol=1e-10,
+                err_msg=f"{utc_iso} {target_key} velocity",
+            )
 
-    def test_propagated_distance_from_sun(
-        self, sample_orb_asteroid, sample_fovlist, sample_jd_tdb
-    ):
-        """Heliocentric distance should match reference value."""
-        loc = SSOLocator(fovs=sample_fovlist, orb=sample_orb_asteroid)
-        loc.propagate_n_body(jd0=sample_jd_tdb, suppress_errors=True)
-        state = loc.states_propagated_jd0[0]
-        r_hel = np.sqrt(state.pos[0] ** 2 + state.pos[1] ** 2 + state.pos[2] ** 2)
-        # Reference: 2.306002 AU
-        assert np.isclose(r_hel, 2.306002, atol=1e-5), f"r_hel={r_hel:.6f} AU"
+    def test_simstates_init_sets_prepropagated_states(self):
+        """simstates init path accepts already propagated states."""
+        utc_iso = REFERENCE_TIMES_UTC[0]
+        fov = _wide_fov(_sun_observer(_to_tdb_jd(utc_iso)))
+        state = _state_from_reference(utc_iso, "15", desig="15")
+        simstates = kete.SimultaneousStates([state], fov=fov)
 
-    def test_propagated_velocity_magnitude(
-        self, sample_orb_asteroid, sample_fovlist, sample_jd_tdb
-    ):
-        """Orbital velocity magnitude should match reference value."""
-        loc = SSOLocator(fovs=sample_fovlist, orb=sample_orb_asteroid)
-        loc.propagate_n_body(jd0=sample_jd_tdb, suppress_errors=True)
-        state = loc.states_propagated_jd0[0]
-        v_mag = np.sqrt(state.vel[0] ** 2 + state.vel[1] ** 2 + state.vel[2] ** 2)
-        # Reference: sqrt(0.0116^2 + 0.0023^2 + 0.0020^2) ≈ 0.01193 AU/day
-        expected_v = np.sqrt(0.0116237533**2 + 0.0023363467**2 + 0.0020398849**2)
-        assert np.isclose(v_mag, expected_v, atol=1e-8), f"v={v_mag:.8f} AU/day"
+        loc = SSOLocator(fovs=fov, orb=SMALL_BODY_ORBITS, simstates=simstates)
+
+        assert np.isclose(loc.jd0, simstates.jd, atol=1e-10)
+        assert len(loc.states_propagated_jd0) == 1
+        assert loc.states_propagated_jd0[0].desig == "15"
 
 
-class TestSSOLocatorMultiObject:
-    """Test SSOLocator handling of multiple objects (Eunomia + Eros)."""
+@pytest.mark.slow
+@pytest.mark.integration
+class TestSSOLocatorReferenceEphemerides:
+    """Strict SSOLocator ephemeris checks against hard-coded Horizons data."""
 
-    def test_multi_object_pipeline(
-        self, sample_orb_asteroid, sample_orb_eros, sample_fov_earth_2024
-    ):
-        """End-to-end test for 2 objects: propagation -> fov check -> flux."""
-        # Setup
-        orb = pd.concat([sample_orb_asteroid, sample_orb_eros], ignore_index=True)
-        loc = SSOLocator(fovs=sample_fov_earth_2024, orb=orb)
+    @pytest.mark.parametrize("target_key", CORE_STRICT_EPHEM_TARGETS)
+    def test_core_ra_dec_matches_horizons_reference(self, target_key):
+        """Core fov_state_check/calc_ephems matches Horizons RA/Dec strictly."""
+        for utc_iso in REFERENCE_TIMES_UTC:
+            row = _strict_core_ephemerides_from_reference_vectors(utc_iso)[target_key]
+            ref = reference_horizons_ephemeris(target_key, utc_iso)
 
-        # Propagate
-        loc.propagate_n_body(
-            jd0=sample_fov_earth_2024.observer.jd, include_asteroids=True
+            assert _angle_delta_deg(row["ra"], ref["ra"]) <= QUERY_ANGLE_ATOL_DEG
+            assert _angle_delta_deg(row["dec"], ref["dec"]) <= QUERY_ANGLE_ATOL_DEG
+
+    @pytest.mark.parametrize("target_key", CORE_STRICT_EPHEM_TARGETS)
+    def test_core_distances_match_horizons_reference(self, target_key):
+        """Core fov_state_check/calc_ephems distances match Horizons strictly."""
+        for utc_iso in REFERENCE_TIMES_UTC:
+            row = _strict_core_ephemerides_from_reference_vectors(utc_iso)[target_key]
+            ref = reference_horizons_ephemeris(target_key, utc_iso)
+
+            for col in ("r_hel", "r_obs"):
+                assert np.isclose(row[col], ref[col], atol=DIST_ATOL_AU, rtol=1e-10), (
+                    f"{utc_iso} {target_key} {col}: got {row[col]}, expected {ref[col]}"
+                )
+
+    @pytest.mark.xfail(
+        reason=(
+            "Kete fov_state_check uses two-body propagation for the final "
+            "light-time correction from an observation-epoch vector; C/2025 A6 "
+            "retains a 0.01-0.03 arcsec residual against Horizons."
+        ),
+        strict=True,
+    )
+    def test_core_comet_light_delay_restoration_is_sub_001_arcsec(self):
+        """Core-level guard for the remaining comet light-delay residual."""
+        for utc_iso in REFERENCE_TIMES_UTC:
+            row = _strict_core_ephemerides_from_reference_vectors(utc_iso)["C/2025 A6"]
+            ref = reference_horizons_ephemeris("C/2025 A6", utc_iso)
+
+            assert _angle_delta_deg(row["ra"], ref["ra"]) <= QUERY_ANGLE_ATOL_DEG
+            assert _angle_delta_deg(row["dec"], ref["dec"]) <= QUERY_ANGLE_ATOL_DEG
+
+    @pytest.mark.parametrize("add_obsid", [False, True])
+    @pytest.mark.parametrize("drop_obsindex", [False, True])
+    @pytest.mark.parametrize("add_jds", [False, True])
+    def test_calc_ephems_output_column_options(self, add_obsid, drop_obsindex, add_jds):
+        """calc_ephems honors output-shape options for all option combinations."""
+        utc_iso = REFERENCE_TIMES_UTC[0]
+        observer_state = _state_from_reference(utc_iso, "earth", desig="geocenter")
+        loc = SSOLocator(
+            fovs=_wide_fov(observer_state),
+            orb=SMALL_BODY_ORBITS,
+            non_gravs=False,
+            drop_major_asteroids=False,
         )
-        assert len(loc.states_propagated_jd0) == 2
-
-        # FOV Check
-        loc.fov_state_check(include_asteroids=False, use_spice_for_loaded=False)
-        assert len(loc.fov_check_simstates) == 1
-        assert len(loc.fov_check_simstates[0].states) == 2
-
-        # Flux (Calc Ephems)
-        loc.calc_ephems()
-        eph = loc.eph
-        assert len(eph) == 2
-
-        # Reference Positions (Sun-centric J2000 Ecliptic)
-        # Earth (from fixture/Horizons)
-        pos_earth = np.array([-0.165851246, 0.969230782, -0.000054915])
-
-        # Eunomia (Horizons)
-        pos_eun = np.array([1.987815889, -1.216791974, 0.282474578])
-        # Eros (Horizons)
-        pos_eros = np.array([1.324107311, 0.525501167, 0.265860328])
-
-        # Get Rows
-        row_eun = eph[eph["desig"].str.contains("Eunomia")].iloc[0]
-        row_eros = eph[eph["desig"].str.contains("Eros")].iloc[0]
-
-        # --- Eunomia Validation ---
-        # Magnitudes
-        assert np.isclose(row_eun["vmag"], 10.45, atol=0.1)
-
-        # Geometries
-        # r_hel
-        expected_r_hel_eun = np.linalg.norm(pos_eun)
-        assert np.isclose(row_eun["r_hel"], expected_r_hel_eun, atol=1e-4)
-
-        # r_obs
-        expected_r_obs_eun = np.linalg.norm(pos_eun - pos_earth)
-        assert np.isclose(row_eun["r_obs"], expected_r_obs_eun, atol=1e-4)
-
-        # Phase (alpha)
-        # Cos(alpha) = dot(Sun->Obj, Obs->Obj) / (|Sun->Obj| * |Obs->Obj|)
-        vec_so = pos_eun
-        vec_oo = pos_eun - pos_earth
-        cos_alpha = np.dot(vec_so, vec_oo) / (
-            np.linalg.norm(vec_so) * np.linalg.norm(vec_oo)
+        loc.states_propagated_jd0 = [
+            _state_from_reference(utc_iso, "15", desig="15")
+        ]
+        loc.fov_state_check(use_spice_for_loaded=False)
+        loc.calc_ephems(
+            sort_by=None,
+            compact=False,
+            add_obsid=add_obsid,
+            drop_obsindex=drop_obsindex,
+            add_jds=add_jds,
         )
-        expected_alpha_eun = np.degrees(np.arccos(cos_alpha))
-        assert np.isclose(row_eun["alpha"], expected_alpha_eun, atol=0.1)
 
-        # --- Eros Validation ---
-        # Magnitudes
-        assert np.isclose(row_eros["vmag"], 13.14, atol=0.2)
-
-        # Geometries
-        # r_hel
-        expected_r_hel_eros = np.linalg.norm(pos_eros)
-        assert np.isclose(row_eros["r_hel"], expected_r_hel_eros, atol=1e-4)
-
-        # r_obs
-        expected_r_obs_eros = np.linalg.norm(pos_eros - pos_earth)
-        assert np.isclose(row_eros["r_obs"], expected_r_obs_eros, atol=1e-4)
-
-        # Phase (alpha)
-        vec_so = pos_eros
-        vec_oo = pos_eros - pos_earth
-        cos_alpha_eros = np.dot(vec_so, vec_oo) / (
-            np.linalg.norm(vec_so) * np.linalg.norm(vec_oo)
-        )
-        expected_alpha_eros = np.degrees(np.arccos(cos_alpha_eros))
-        assert np.isclose(row_eros["alpha"], expected_alpha_eros, atol=0.1)
+        assert ("obsid" in loc.eph.columns) is add_obsid
+        assert ("obsindex" not in loc.eph.columns) is drop_obsindex
+        assert ("jd_tdb" in loc.eph.columns) is add_jds
+        assert ("jd_utc" in loc.eph.columns) is add_jds
 
 
 @pytest.mark.integration
 class TestSSOLocatorSpiceReplacement:
     """Test SPICE replacement for loaded asteroids.
 
-    When include_asteroids=True, the 5 large asteroids (Ceres, Pallas, Vesta,
-    Hygiea, Interamnia) should have their n-body states replaced with SPICE
-    data to avoid self-impact issues.
+    Default (drop_major_asteroids=True): the 5 loaded asteroids are separated
+    into _spice_asteroid_orb and re-inserted via fov_spice_check in fov_state_check.
+
+    With drop_major_asteroids=False: raw n-body is used; self-collision may yield NaN.
     """
 
-    def test_vesta_gets_spice_state(
+    def test_drop_major_true_separates_vesta(
+        self, sample_orb_vesta, sample_fovlist
+    ):
+        """With drop_major_asteroids=True, Vesta is in _spice_asteroid_orb not orb."""
+        loc = SSOLocator(
+            fovs=sample_fovlist,
+            orb=sample_orb_vesta,
+            drop_major_asteroids=True,
+        )
+        assert len(loc.orb) == 0
+        assert len(loc._spice_asteroid_orb) == 1
+        assert loc._spice_asteroid_orb.iloc[0]["desig"] == "4"
+
+    def test_drop_major_false_keeps_vesta_in_orb(
+        self, sample_orb_vesta, sample_fovlist
+    ):
+        """With drop_major_asteroids=False, Vesta stays in orb."""
+        loc = SSOLocator(
+            fovs=sample_fovlist,
+            orb=sample_orb_vesta,
+            drop_major_asteroids=False,
+        )
+        assert len(loc.orb) == 1
+        assert len(loc._spice_asteroid_orb) == 1  # still tracked
+
+    def test_drop_major_false_propagation_may_nan(
         self, sample_orb_vesta, sample_fovlist, sample_jd_tdb
     ):
-        """Vesta state should match SPICE data after propagation."""
-        loc = SSOLocator(
-            fovs=sample_fovlist, orb=sample_orb_vesta, drop_major_asteroids=False
-        )
-        loc.propagate_n_body(jd0=sample_jd_tdb, include_asteroids=True)
+        """With drop_major_asteroids=False + include_asteroids=True, kete may give NaN.
 
-        # Get propagated state
-        propagated = loc.states_propagated_jd0[0]
-
-        # Get expected SPICE state
-        expected = kete.spice.get_state("vesta", sample_jd_tdb)
-
-        # Positions should match exactly (replaced by SPICE)
-        np.testing.assert_allclose(
-            [propagated.pos[0], propagated.pos[1], propagated.pos[2]],
-            [expected.pos[0], expected.pos[1], expected.pos[2]],
-            atol=1e-10,
-        )
-
-    def test_vesta_not_nan(self, sample_orb_vesta, sample_fovlist, sample_jd_tdb):
-        """Vesta state should never be NaN when include_asteroids=True."""
-        loc = SSOLocator(
-            fovs=sample_fovlist, orb=sample_orb_vesta, drop_major_asteroids=False
-        )
-        loc.propagate_n_body(jd0=sample_jd_tdb, include_asteroids=True)
-
-        state = loc.states_propagated_jd0[0]
-        assert not np.isnan(state.pos[0]), "Vesta position should not be NaN"
-        assert not np.isnan(state.pos[1]), "Vesta position should not be NaN"
-        assert not np.isnan(state.pos[2]), "Vesta position should not be NaN"
-
-    def test_mixed_objects_spice_replacement(
-        self, sample_orb_asteroid, sample_orb_vesta, sample_fovlist, sample_jd_tdb
-    ):
-        """Mixed objects: Vesta gets SPICE, Eunomia gets n-body."""
-        orb = pd.concat([sample_orb_asteroid, sample_orb_vesta], ignore_index=True)
-        loc = SSOLocator(fovs=sample_fovlist, orb=orb, drop_major_asteroids=False)
-        loc.propagate_n_body(jd0=sample_jd_tdb, include_asteroids=True)
-
-        assert len(loc.states_propagated_jd0) == 2
-
-        # Find Vesta and Eunomia states
-        vesta_state = None
-        eunomia_state = None
-        for s in loc.states_propagated_jd0:
-            if s.desig == "vesta" or s.desig == "4":
-                vesta_state = s
-            elif "Eunomia" in s.desig or s.desig == "15":
-                eunomia_state = s
-
-        # Vesta should match SPICE exactly
-        expected_vesta = kete.spice.get_state("vesta", sample_jd_tdb)
-        np.testing.assert_allclose(
-            [vesta_state.pos[0], vesta_state.pos[1], vesta_state.pos[2]],
-            [expected_vesta.pos[0], expected_vesta.pos[1], expected_vesta.pos[2]],
-            atol=1e-10,
-        )
-
-        # Eunomia should NOT be NaN (it's a regular n-body result)
-        assert not np.isnan(eunomia_state.pos[0])
-
-    def test_spice_replacement_from_cache(
-        self, sample_orb_vesta, sample_fovlist, sample_jd_tdb, tmp_path
-    ):
-        """SPICE replacement should work even when loading from cached file."""
-        output_file = tmp_path / "test_simstates.parq"
-
-        loc = SSOLocator(
-            fovs=sample_fovlist, orb=sample_orb_vesta, drop_major_asteroids=False
-        )
-
-        # First run: compute and save (with include_asteroids=True)
-        loc.propagate_n_body(
-            jd0=sample_jd_tdb, include_asteroids=True, output=output_file
-        )
-        first_pos = [
-            loc.states_propagated_jd0[0].pos[0],
-            loc.states_propagated_jd0[0].pos[1],
-            loc.states_propagated_jd0[0].pos[2],
-        ]
-
-        # Second run: load from cache (should STILL apply SPICE replacement)
-        loc2 = SSOLocator(
-            fovs=sample_fovlist, orb=sample_orb_vesta, drop_major_asteroids=False
-        )
-        loc2.propagate_n_body(
-            jd0=sample_jd_tdb,
-            include_asteroids=True,
-            output=output_file,
-            overwrite=False,
-        )
-        second_pos = [
-            loc2.states_propagated_jd0[0].pos[0],
-            loc2.states_propagated_jd0[0].pos[1],
-            loc2.states_propagated_jd0[0].pos[2],
-        ]
-
-        # Both should match SPICE data
-        expected = kete.spice.get_state("vesta", sample_jd_tdb)
-        np.testing.assert_allclose(
-            first_pos, [expected.pos[0], expected.pos[1], expected.pos[2]], atol=1e-10
-        )
-        np.testing.assert_allclose(
-            second_pos, [expected.pos[0], expected.pos[1], expected.pos[2]], atol=1e-10
-        )
-
-    def test_fov_state_check_no_asteroid_spice_errors(
-        self, sample_orb_vesta, sample_fov_earth_2024
-    ):
-        """fov_state_check should not fail with 'Multiple objects match' for asteroids.
-
-        This tests that we don't use fov_spice_check for asteroids (which causes
-        fuzzy matching issues), but instead rely on the SPICE-replaced n-body results.
-        """
-        import logging
-        import io
-
-        # Set up logging capture
-        log_capture = io.StringIO()
-        handler = logging.StreamHandler(log_capture)
-        handler.setLevel(logging.DEBUG)
-        logger = logging.getLogger("skyloc.core")
-        original_level = logger.level
-        logger.setLevel(logging.DEBUG)
-        logger.addHandler(handler)
-
-        try:
-            loc = SSOLocator(
-                fovs=sample_fov_earth_2024,
-                orb=sample_orb_vesta,
-                drop_major_asteroids=False,
-            )
-            loc.propagate_n_body(
-                jd0=sample_fov_earth_2024.observer.jd, include_asteroids=True
-            )
-            loc.fov_state_check(include_asteroids=True, use_spice_for_loaded=True)
-
-            # Check logs for asteroid-related errors
-            log_output = log_capture.getvalue()
-            # Should NOT see "Multiple objects match" for asteroids
-            assert "fov_spice_check failed for ceres" not in log_output
-            assert "fov_spice_check failed for vesta" not in log_output
-            assert "fov_spice_check failed for pallas" not in log_output
-            assert "fov_spice_check failed for hygiea" not in log_output
-            assert "fov_spice_check failed for interamnia" not in log_output
-        finally:
-            logger.removeHandler(handler)
-            logger.setLevel(original_level)
-
-    def test_full_pipeline_with_loaded_asteroid(
-        self, sample_orb_vesta, sample_fov_earth_2024
-    ):
-        """Full pipeline test: Vesta should have valid SPICE-based ephemeris.
-
-        Tests propagate_n_body -> fov_state_check -> calc_ephems for a loaded asteroid.
+        This is intentional: the user wants to see raw self-collision output.
+        The test only checks that propagation runs without exception.
         """
         loc = SSOLocator(
-            fovs=sample_fov_earth_2024, orb=sample_orb_vesta, drop_major_asteroids=False
+            fovs=sample_fovlist,
+            orb=sample_orb_vesta,
+            drop_major_asteroids=False,
+        )
+        loc.propagate_n_body(jd0=sample_jd_tdb, include_asteroids=True)
+        assert len(loc.states_propagated_jd0) == 1
+
+    def test_drop_major_true_propagation_no_vesta_in_states(
+        self, sample_orb_vesta, sample_fovlist, sample_jd_tdb
+    ):
+        """With drop_major_asteroids=True, Vesta is excluded from n-body states."""
+        loc = SSOLocator(
+            fovs=sample_fovlist,
+            orb=sample_orb_vesta,
+            drop_major_asteroids=True,
+        )
+        loc.propagate_n_body(jd0=sample_jd_tdb, include_asteroids=True)
+        assert len(loc.states_propagated_jd0) == 0
+
+    def test_spice_asteroid_targets_use_spkid(self, sample_orb_vesta, sample_fovlist):
+        """_spice_asteroid_spkids should use SPK IDs, not SBDB numbers."""
+        loc = SSOLocator(fovs=sample_fovlist, orb=sample_orb_vesta)
+        assert loc._spice_asteroid_spkids == ["20000004"]
+
+    def test_use_spice_for_loaded_checks_dropped_asteroids_not_planets(
+        self, sample_orb_vesta, sample_fovlist, monkeypatch
+    ):
+        """use_spice_for_loaded should restore dropped loaded asteroids only."""
+        called_targets = []
+
+        def fake_fov_state_check(*args, **kwargs):
+            return []
+
+        def fake_fov_spice_check(targets, fovs):
+            called_targets.append(list(targets))
+            return []
+
+        monkeypatch.setattr(core_mod.kete.fov, "fov_state_check", fake_fov_state_check)
+        monkeypatch.setattr(core_mod.kete.fov, "fov_spice_check", fake_fov_spice_check)
+
+        loc = SSOLocator(
+            fovs=sample_fovlist,
+            orb=sample_orb_vesta,
+            drop_major_asteroids=True,
+        )
+        assert len(loc.orb) == 0
+
+        loc.states_propagated_jd0 = []
+        loc.fov_state_check(use_spice_for_loaded=True)
+
+        assert called_targets == [["20000004"]]
+
+    @pytest.mark.parametrize("include_asteroids", [False, True])
+    @pytest.mark.parametrize("use_spice_for_loaded", [False, True])
+    @pytest.mark.parametrize("include_planets", [False, True])
+    @pytest.mark.parametrize("spice_targets", [None, ["599"]])
+    def test_fov_state_check_option_combinations_are_forwarded(
+        self,
+        sample_orb_vesta,
+        sample_fovlist,
+        monkeypatch,
+        include_asteroids,
+        use_spice_for_loaded,
+        include_planets,
+        spice_targets,
+    ):
+        """fov_state_check forwards n-body and SPICE option combinations."""
+        state_calls = []
+        spice_calls = []
+
+        def fake_fov_state_check(states, fovs, **kwargs):
+            state_calls.append(kwargs)
+            return []
+
+        def fake_fov_spice_check(targets, fovs):
+            spice_calls.append(list(targets))
+            return []
+
+        monkeypatch.setattr(core_mod.kete.fov, "fov_state_check", fake_fov_state_check)
+        monkeypatch.setattr(core_mod.kete.fov, "fov_spice_check", fake_fov_spice_check)
+
+        loc = SSOLocator(
+            fovs=sample_fovlist,
+            orb=sample_orb_vesta,
+            drop_major_asteroids=True,
+        )
+        loc.states_propagated_jd0 = [_state_from_reference(REFERENCE_TIMES_UTC[0], "15")]
+
+        loc.fov_state_check(
+            include_asteroids=include_asteroids,
+            use_spice_for_loaded=use_spice_for_loaded,
+            include_planets=include_planets,
+            spice_targets=spice_targets,
         )
 
-        # Step 1: Propagate (should SPICE-replace Vesta)
+        assert state_calls == [
+            {"dt_limit": 3.0, "include_asteroids": include_asteroids}
+        ]
+
+        expected_targets = []
+        if use_spice_for_loaded:
+            expected_targets.append("20000004")
+        if include_planets:
+            expected_targets.extend(
+                get_default_spice_targets(
+                    include_planets=True,
+                    include_asteroids=False,
+                )
+            )
+        if spice_targets is not None:
+            expected_targets.extend(spice_targets)
+        expected_targets = list(dict.fromkeys(expected_targets))
+
+        if expected_targets:
+            assert spice_calls == [expected_targets]
+        else:
+            assert spice_calls == []
+
+    def test_spice_asteroid_infov_mask_set_after_fov_check(
+        self, sample_orb_vesta, sample_fovlist, monkeypatch
+    ):
+        """fov_state_check sets spice_asteroid_infov_mask."""
+        monkeypatch.setattr(core_mod.kete.fov, "fov_state_check", lambda *a, **kw: [])
+        monkeypatch.setattr(core_mod.kete.fov, "fov_spice_check", lambda *a, **kw: [])
+
+        loc = SSOLocator(
+            fovs=sample_fovlist,
+            orb=sample_orb_vesta,
+            drop_major_asteroids=True,
+        )
+        loc.states_propagated_jd0 = []
+        loc.fov_state_check(use_spice_for_loaded=True)
+
+        assert hasattr(loc, "spice_asteroid_infov_mask")
+        assert len(loc.spice_asteroid_infov_mask) == 1
+
+    def test_full_pipeline_drop_major_true(
+        self, sample_orb_vesta, sample_fov_earth_2024, monkeypatch
+    ):
+        """With drop_major_asteroids=True, Vesta flows through _spice_asteroid_orb."""
+        loc = SSOLocator(
+            fovs=sample_fov_earth_2024, orb=sample_orb_vesta, drop_major_asteroids=True
+        )
         jd = sample_fov_earth_2024.observer.jd
-        loc.propagate_n_body(jd0=jd, include_asteroids=True)
+        loc.propagate_n_body(jd0=jd, include_asteroids=False)
+        assert len(loc.states_propagated_jd0) == 0
 
-        # Verify Vesta has SPICE position
-        expected_spice = kete.spice.get_state("vesta", jd)
-        propagated = loc.states_propagated_jd0[0]
-        np.testing.assert_allclose(
-            [propagated.pos[0], propagated.pos[1], propagated.pos[2]],
-            [expected_spice.pos[0], expected_spice.pos[1], expected_spice.pos[2]],
-            atol=1e-10,
-            err_msg="Vesta should have SPICE position after propagation",
-        )
-
-        # Step 2: FOV state check (should work without errors)
-        # Note: Vesta may or may not be in the FOV depending on geometry
-        loc.fov_state_check(include_asteroids=True, use_spice_for_loaded=False)
-
-        # Step 3: If Vesta is in FOV, calculate ephemeris
-        if loc.fov_check_simstates and any(
-            "4" in [s.desig for s in ss.states]
-            or "vesta" in [s.desig.lower() for s in ss.states]
-            for ss in loc.fov_check_simstates
-        ):
-            loc.calc_ephems()
-            assert loc.eph is not None, "Ephemeris should be calculated"
-
-            # Verify Vesta's heliocentric distance is reasonable (2-3 AU for Vesta)
-            vesta_eph = loc.eph[loc.eph["desig"] == "4"]
-            if len(vesta_eph) > 0:
-                r_hel = vesta_eph.iloc[0]["r_hel"]
-                assert 2.0 < r_hel < 3.0, f"Vesta r_hel should be 2-3 AU, got {r_hel}"
+        loc.fov_state_check(include_asteroids=False, use_spice_for_loaded=True)
+        assert hasattr(loc, "spice_asteroid_infov_mask")
 
 
 class TestCalcEphemsEdgeCases:
@@ -527,3 +586,273 @@ class TestCalcEphemsEdgeCases:
         assert not np.isnan(eph.iloc[0]["r_obs"]), "r_obs should be calculated"
         assert not np.isnan(eph.iloc[0]["ra"]), "ra should be calculated"
         assert not np.isnan(eph.iloc[0]["dec"]), "dec should be calculated"
+
+
+class TestSpiceConfig:
+    """Test SPICE target configuration functions."""
+
+    def test_get_default_spice_targets_all(self):
+        """Default targets include planets and asteroids."""
+        targets = get_default_spice_targets(
+            include_planets=True, include_asteroids=True
+        )
+        assert "499" in targets
+        assert "599" in targets
+        assert "ceres" in targets
+        assert "vesta" in targets
+        assert len(targets) == 14
+
+    def test_get_default_spice_targets_planets_only(self):
+        """Can get planets only."""
+        targets = get_default_spice_targets(
+            include_planets=True, include_asteroids=False
+        )
+        assert "599" in targets
+        assert "ceres" not in targets
+        assert len(targets) == 9
+
+    def test_get_default_spice_targets_asteroids_only(self):
+        """Can get asteroids only."""
+        targets = get_default_spice_targets(
+            include_planets=False, include_asteroids=True
+        )
+        assert "599" not in targets
+        assert "ceres" in targets
+        assert len(targets) == 5
+
+    def test_get_spice_asteroid_names(self):
+        """Asteroid names match known values."""
+        names = get_spice_asteroid_names()
+        assert "ceres" in names
+        assert "pallas" in names
+        assert "vesta" in names
+        assert "hygiea" in names
+        assert "interamnia" in names
+        assert len(names) == 5
+
+    def test_get_spice_asteroid_desigs(self):
+        """Asteroid designations match known values."""
+        desigs = get_spice_asteroid_desigs()
+        assert "1" in desigs
+        assert "2" in desigs
+        assert "4" in desigs
+        assert "10" in desigs
+        assert "704" in desigs
+
+    def test_is_spice_resolvable_planet(self):
+        """Planet names are resolvable."""
+        is_res, name = is_spice_resolvable("jupiter")
+        assert is_res is True
+        assert name == "jupiter"
+
+    def test_is_spice_resolvable_asteroid_by_name(self):
+        """Asteroid names are resolvable."""
+        is_res, name = is_spice_resolvable("ceres")
+        assert is_res is True
+        assert name == "ceres"
+
+    def test_is_spice_resolvable_asteroid_by_number(self):
+        """Asteroid numbers are resolvable."""
+        is_res, name = is_spice_resolvable("1")
+        assert is_res is True
+        assert name == "ceres"
+
+    def test_is_spice_resolvable_unknown(self):
+        """Unknown objects return False."""
+        is_res, name = is_spice_resolvable("unknown_object")
+        assert is_res is False
+        assert name is None
+
+    def test_kete_planets_structure(self):
+        """KETE_PLANETS has correct structure."""
+        assert "earth" in KETE_PLANETS
+        assert KETE_PLANETS["earth"]["spkid"] == 399
+        assert KETE_PLANETS["jupiter"]["spkid"] == 599
+
+    def test_kete_asteroids_physics_structure(self):
+        """KETE_ASTEROIDS_PHYSICS has correct structure."""
+        assert "1" in KETE_ASTEROIDS_PHYSICS
+        assert KETE_ASTEROIDS_PHYSICS["1"]["name"] == "ceres"
+        assert KETE_ASTEROIDS_PHYSICS["1"]["spkid"] == 20_000_001
+
+
+class TestSpiceLocator:
+    """Test SpiceLocator class."""
+
+    def test_init_default_targets(self, sample_fovlist):
+        """SpiceLocator initializes with default targets."""
+        sl = SpiceLocator(sample_fovlist)
+        assert len(sl.targets) == 14
+        assert "599" in sl.targets
+        assert "ceres" in sl.targets
+
+    def test_init_custom_targets(self, sample_fovlist):
+        """SpiceLocator accepts custom targets."""
+        sl = SpiceLocator(sample_fovlist, targets=["mars", "jupiter"])
+        assert sl.targets == ["mars", "jupiter"]
+
+    def test_init_planets_only(self, sample_fovlist):
+        """SpiceLocator can be planets only."""
+        sl = SpiceLocator(sample_fovlist, include_planets=True, include_asteroids=False)
+        assert "599" in sl.targets
+        assert "ceres" not in sl.targets
+
+    def test_init_asteroids_only(self, sample_fovlist):
+        """SpiceLocator can be asteroids only."""
+        sl = SpiceLocator(sample_fovlist, include_planets=False, include_asteroids=True)
+        assert "599" not in sl.targets
+        assert "ceres" in sl.targets
+
+    def test_fovc_set(self, sample_fovlist):
+        """FOVCollection is properly set."""
+        sl = SpiceLocator(sample_fovlist)
+        assert isinstance(sl.fovc, FOVCollection)
+        assert len(sl.fovc) == 3
+
+    def test_loaded_objects(self, sample_fovlist):
+        """loaded_objects attribute is populated."""
+        sl = SpiceLocator(sample_fovlist)
+        assert sl.loaded is not None
+        loaded_names = [name for name, _ in sl.loaded]
+        assert "Earth" in loaded_names or "earth" in loaded_names
+
+    @pytest.mark.integration
+    def test_fov_spice_check_runs(self, sample_fov_earth_2024):
+        """fov_spice_check executes without error."""
+        sl = SpiceLocator([sample_fov_earth_2024], targets=["599"])
+        sl.fov_spice_check()
+        assert sl.fov_check_fov2objs is not None
+        assert sl.fov_check_objids is not None
+
+
+class TestStarLocator:
+    """Test StarLocator class."""
+
+    @pytest.fixture
+    def sample_stars(self):
+        """Sample star catalog with known positions."""
+        return pd.DataFrame(
+            {
+                "desig": ["Vega", "Sirius", "Arcturus"],
+                "ra": [279.2347, 101.2875, 213.9153],
+                "dec": [38.7837, -16.7161, 19.1824],
+                "vmag": [0.03, -1.46, -0.05],
+            }
+        )
+
+    def test_init_with_sources(self, sample_fovlist, sample_stars):
+        """StarLocator initializes with sources."""
+        sl = StarLocator(sample_fovlist, sources=sample_stars)
+        assert sl.sources is not None
+        assert len(sl.sources) == 3
+
+    def test_init_without_sources(self, sample_fovlist):
+        """StarLocator initializes without sources."""
+        sl = StarLocator(sample_fovlist)
+        assert sl.sources is None
+
+    def test_set_sources(self, sample_fovlist, sample_stars):
+        """Can set sources after init."""
+        sl = StarLocator(sample_fovlist)
+        sl.set_sources(sample_stars)
+        assert sl.sources is not None
+        assert len(sl.sources) == 3
+
+    def test_set_sources_auto_desig(self, sample_fovlist):
+        """Auto-generates designations if not provided."""
+        sources = pd.DataFrame(
+            {
+                "ra": [0.0, 90.0, 180.0],
+                "dec": [0.0, 45.0, -45.0],
+            }
+        )
+        sl = StarLocator(sample_fovlist)
+        sl.set_sources(sources)
+        assert "desig" in sl.sources.columns
+        assert sl.sources["desig"].iloc[0] == "star_0"
+
+    def test_set_sources_missing_columns(self, sample_fovlist):
+        """Raises error if required columns missing."""
+        sources = pd.DataFrame({"ra": [0.0]})
+        sl = StarLocator(sample_fovlist)
+        with pytest.raises(ValueError, match="Missing required columns"):
+            sl.set_sources(sources)
+
+    def test_set_sources_wrong_type(self, sample_fovlist):
+        """Raises error if sources not DataFrame."""
+        sl = StarLocator(sample_fovlist)
+        with pytest.raises(TypeError):
+            sl.set_sources([(0, 0), (90, 45)])
+
+    def test_fov_static_check_no_sources(self, sample_fovlist):
+        """fov_static_check raises error without sources."""
+        sl = StarLocator(sample_fovlist)
+        with pytest.raises(ValueError, match="No sources set"):
+            sl.fov_static_check()
+
+    @pytest.mark.integration
+    def test_fov_static_check_runs(self, sample_fov_earth_2024, sample_stars):
+        """fov_static_check executes without error."""
+        sl = StarLocator([sample_fov_earth_2024], sources=sample_stars)
+        sl.fov_static_check()
+        assert sl.fov_check_fov2objs is not None
+        assert sl.sources_infov_mask is not None
+
+    @pytest.mark.integration
+    def test_get_visible_sources(self, sample_fov_earth_2024, sample_stars):
+        """get_visible_sources returns DataFrame."""
+        sl = StarLocator([sample_fov_earth_2024], sources=sample_stars)
+        sl.fov_static_check()
+        visible = sl.get_visible_sources()
+        assert isinstance(visible, pd.DataFrame)
+
+    def test_get_visible_sources_no_check(self, sample_fovlist, sample_stars):
+        """get_visible_sources raises error without check."""
+        sl = StarLocator(sample_fovlist, sources=sample_stars)
+        with pytest.raises(ValueError, match="Run fov_static_check"):
+            sl.get_visible_sources()
+
+
+class TestSpiceUtils:
+    """Test spice utility functions."""
+
+    def test_get_states_single_jd(self):
+        """get_states works with single JD."""
+        from skyloc.keteutils.spice import get_states
+
+        states = get_states("earth", _to_tdb_jd(REFERENCE_TIMES_UTC[0]), center="sun")
+        assert len(states) == 1
+        assert states[0].desig.lower() == "earth"
+
+    def test_get_states_multiple_jds(self):
+        """get_states works with multiple JDs."""
+        from skyloc.keteutils.spice import get_states
+
+        jds = [_to_tdb_jd(utc_iso) for utc_iso in REFERENCE_TIMES_UTC]
+        states = get_states("earth", jds, center="sun")
+        assert len(states) == len(REFERENCE_TIMES_UTC)
+
+    def test_get_state_arrays(self):
+        """get_state_arrays returns numpy arrays."""
+        from skyloc.keteutils.spice import get_state_arrays
+
+        jds = [_to_tdb_jd(utc_iso) for utc_iso in REFERENCE_TIMES_UTC[:2]]
+        pos, vel = get_state_arrays("earth", jds, center="sun")
+        assert pos.shape == (2, 3)
+        assert vel.shape == (2, 3)
+
+    def test_is_spk_loaded_earth(self):
+        """Earth should be loaded by default."""
+        from skyloc.keteutils.spice import is_spk_loaded
+
+        is_loaded, name = is_spk_loaded("earth")
+        assert is_loaded is True
+        assert name is not None
+
+    def test_is_spk_loaded_horizons_format(self):
+        """Handles Horizons "500@" format."""
+        from skyloc.keteutils.spice import is_spk_loaded
+
+        is_loaded, name = is_spk_loaded("500@399")
+        assert is_loaded is True
+        assert name == "399"

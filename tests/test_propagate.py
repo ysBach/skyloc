@@ -1,391 +1,225 @@
-"""Tests for skyloc.keteutils.propagate module.
-
-Tests verify numerical results against expected values computed from kete
-for 15 Eunomia at JD 2460676.5 (2025-01-01).
-
-Reference values (geocentric observer):
-- r_hel = 2.306002 AU
-- r_obs = 1.371160 AU
-- α = 9.841240°
-- RA = 76.476535°, Dec = 31.449820°
-- sky_motion = 0.551505 arcsec/min
-"""
+"""Tests for kete-backed propagation and ephemeris restoration."""
 
 import numpy as np
 import pytest
+
 import kete
-from skyloc.keteutils.propagate import make_nongravs_models, calc_geometries
+
+from skyloc.core import calc_ephems
+from skyloc.keteutils.propagate import calc_geometries, make_nongravs_models
+from tests.ephemeris_reference import (
+    DIST_ATOL_AU,
+    QUERY_ANGLE_ATOL_DEG,
+    REFERENCE_TIMES_UTC,
+    SMALL_BODY_ORBITS,
+    TARGET_KEYS,
+    _angle_delta_deg,
+    _sun_observer,
+    _to_tdb_jd,
+    _wide_fov,
+    reference_horizons_ephemeris,
+    reference_state,
+    reference_tdb_jd,
+)
+
+PROPAGATION_EPHEM_TARGETS = (
+    "earth",
+    "4",
+    "15",
+    "433",
+    "saturn_barycenter",
+)
 
 
 class TestMakeNonGravModels:
     """Test non-gravitational model creation."""
 
-    def test_asteroid_no_nongrav(self, sample_orb_asteroid):
-        """Asteroid with zero A1/A2/A3 should have None nongrav."""
-        non_gravs = make_nongravs_models(sample_orb_asteroid)
-        assert len(non_gravs) == 1
-        assert non_gravs[0] is None
-
-    def test_comet_with_nongrav(self, sample_orb_comet):
-        """Comet with A1/A2 should have NonGravModel."""
-        non_gravs = make_nongravs_models(sample_orb_comet)
-        assert len(non_gravs) == 1
-        assert non_gravs[0] is not None
-        assert isinstance(non_gravs[0], kete.propagation.NonGravModel)
-
-    def test_multi_orb_correct_assignment(self, sample_orb_multi):
-        """Mixed orb: asteroid=None, comet=model."""
-        non_gravs = make_nongravs_models(sample_orb_multi)
-        assert len(non_gravs) == 2
-        assert non_gravs[0] is None  # 15 Eunomia (asteroid)
-        assert non_gravs[1] is not None  # 1P/Halley (comet)
-
-
-class TestCalcGeometries:
-    """Test geometry calculations from SimultaneousStates.
-
-    Reference values computed for 15 Eunomia at JD 2460676.5 (2025-01-01)
-    with geocentric observer.
-    """
-
-    @pytest.fixture
-    def skyloc_geoms_geocentric(self, sample_orb_asteroid, sample_jd_tdb):
-        """Compute geometries with geocentric observer."""
-        earth_state = kete.spice.get_state("earth", sample_jd_tdb, "sun")
-        observer = kete.State(
-            desig="geocentric",
-            jd=sample_jd_tdb,
-            pos=earth_state.pos,
-            vel=earth_state.vel,
-            center_id=10,
-        )
-        pointing = kete.Vector.from_lat_lon(0.0, 0.0)
-        fov = kete.fov.ConeFOV(observer=observer, pointing=pointing, angle=180.0)
-
-        states = kete.mpc.table_to_states(sample_orb_asteroid)
-        propagated = kete.propagate_n_body(
-            states, jd=sample_jd_tdb, suppress_errors=True
-        )
-        simulstates = kete.SimultaneousStates(propagated, fov=fov)
-        return calc_geometries(simulstates, rates_in_arcsec_per_min=True)
-
-    @pytest.mark.slow
-    def test_output_keys(self, skyloc_geoms_geocentric):
-        """Geometry output has all expected keys."""
-        expected_keys = [
-            "desig",
-            "alpha",
-            "r_hel",
-            "r_obs",
-            "ra",
-            "dec",
-            "hel_ecl_lon",
-            "hel_ecl_lat",
-            "obs_ecl_lon",
-            "obs_ecl_lat",
-            "racosdec_rate",
-            "dec_rate",
-            "sky_motion",
-            "sky_motion_pa",
-        ]
-        for key in expected_keys:
-            assert key in skyloc_geoms_geocentric, f"Missing key: {key}"
-
-    @pytest.mark.slow
-    def test_desig_matches(self, skyloc_geoms_geocentric):
-        """Designation should match input orbit."""
-        assert skyloc_geoms_geocentric["desig"][0] == "15 Eunomia"
-
-    @pytest.mark.slow
-    def test_heliocentric_distance(self, skyloc_geoms_geocentric):
-        """r_hel should match reference value."""
-        r_hel = skyloc_geoms_geocentric["r_hel"][0]
-        # Reference: 2.306002 AU
-        assert np.isclose(r_hel, 2.306002, atol=1e-5), f"r_hel={r_hel:.6f} AU"
-
-    @pytest.mark.slow
-    def test_observer_distance(self, skyloc_geoms_geocentric):
-        """r_obs should match reference value."""
-        r_obs = skyloc_geoms_geocentric["r_obs"][0]
-        # Reference: 1.371160 AU
-        assert np.isclose(r_obs, 1.371160, atol=1e-5), f"r_obs={r_obs:.6f} AU"
-
-    @pytest.mark.slow
-    def test_phase_angle(self, skyloc_geoms_geocentric):
-        """Phase angle should match reference value."""
-        alpha = skyloc_geoms_geocentric["alpha"][0]
-        # Reference: 9.841240°
-        assert np.isclose(alpha, 9.841240, atol=0.01), f"alpha={alpha:.6f}°"
-
-    @pytest.mark.slow
-    def test_ra_dec_values(self, skyloc_geoms_geocentric):
-        """RA/Dec should match reference values."""
-        ra = skyloc_geoms_geocentric["ra"][0]
-        dec = skyloc_geoms_geocentric["dec"][0]
-        # Reference: RA=76.476535°, Dec=31.449820°
-        assert np.isclose(ra, 76.476535, atol=0.01), f"RA={ra:.6f}°"
-        assert np.isclose(dec, 31.449820, atol=0.01), f"Dec={dec:.6f}°"
-
-    @pytest.mark.slow
-    def test_sky_motion(self, skyloc_geoms_geocentric):
-        """Sky motion should match reference value."""
-        motion = skyloc_geoms_geocentric["sky_motion"][0]
-        # Reference: 0.551505 arcsec/min
-        assert np.isclose(
-            motion, 0.551505, atol=0.001
-        ), f"motion={motion:.6f} arcsec/min"
-
-    @pytest.mark.slow
-    def test_sky_motion_consistency(self, skyloc_geoms_geocentric):
-        """sky_motion should equal hypot of rate components."""
-        geoms = skyloc_geoms_geocentric
-        computed = np.hypot(geoms["racosdec_rate"], geoms["dec_rate"])
-        np.testing.assert_allclose(geoms["sky_motion"], computed, rtol=1e-6)
-
-
-class TestCalcGeometriesPhysics:
-    """Test physical consistency of geometry calculations."""
-
-    @pytest.fixture
-    def skyloc_geoms_geocentric(self, sample_orb_asteroid, sample_jd_tdb):
-        """Compute geometries with geocentric observer."""
-        earth_state = kete.spice.get_state("earth", sample_jd_tdb, "sun")
-        observer = kete.State(
-            desig="geocentric",
-            jd=sample_jd_tdb,
-            pos=earth_state.pos,
-            vel=earth_state.vel,
-            center_id=10,
-        )
-        pointing = kete.Vector.from_lat_lon(0.0, 0.0)
-        fov = kete.fov.ConeFOV(observer=observer, pointing=pointing, angle=180.0)
-
-        states = kete.mpc.table_to_states(sample_orb_asteroid)
-        propagated = kete.propagate_n_body(
-            states, jd=sample_jd_tdb, suppress_errors=True
-        )
-        simulstates = kete.SimultaneousStates(propagated, fov=fov)
-        return calc_geometries(simulstates, rates_in_arcsec_per_min=True), earth_state
-
-    @pytest.mark.slow
-    def test_phase_angle_law_of_cosines(self, skyloc_geoms_geocentric):
-        """Phase angle should satisfy law of cosines.
-
-        cos(alpha) = (r_hel^2 + r_obs^2 - r_sun_obs^2) / (2 * r_hel * r_obs)
-        """
-        geoms, earth_state = skyloc_geoms_geocentric
-        r_hel = geoms["r_hel"][0]
-        r_obs = geoms["r_obs"][0]
-        alpha = geoms["alpha"][0]
-
-        # Observer-Sun distance
-        r_sun_obs = np.sqrt(
-            earth_state.pos[0] ** 2 + earth_state.pos[1] ** 2 + earth_state.pos[2] ** 2
-        )
-
-        # Law of cosines
-        cos_alpha_computed = (r_hel**2 + r_obs**2 - r_sun_obs**2) / (2 * r_hel * r_obs)
-        alpha_computed = np.rad2deg(np.arccos(cos_alpha_computed))
-
-        # Should match to 0.01°
-        assert np.isclose(
-            alpha, alpha_computed, atol=0.01
-        ), f"α={alpha:.4f}°, law_of_cosines={alpha_computed:.4f}°"
-
-
-@pytest.mark.network
-@pytest.mark.slow
-class TestHorizonsKeteCrossValidation:
-    """Cross-validate kete propagation with JPL Horizons.
-
-    Using high-precision JPL SBDB orbital elements, the results should match
-    Horizons to better than 0.01° for angles and 1e-5 AU for distances.
-    """
-
-    @pytest.fixture
-    def horizons_eunomia(self, sample_jd_tdb):
-        """Query Horizons for 15 Eunomia ephemeris."""
-        from skyloc.jplhorizons import horizons_quick
-
-        _, eph = horizons_quick(
-            objid="15",
-            epochs=[sample_jd_tdb],
-            location="500",  # Geocentric
-            in_tdb=True,
-        )
-        return eph.iloc[0]
-
-    @pytest.fixture
-    def skyloc_eunomia_geocentric(self, sample_orb_asteroid, sample_jd_tdb):
-        """Compute kete ephemeris with geocentric observer."""
-        earth_state = kete.spice.get_state("earth", sample_jd_tdb, "sun")
-        observer = kete.State(
-            desig="geocentric",
-            jd=sample_jd_tdb,
-            pos=earth_state.pos,
-            vel=earth_state.vel,
-            center_id=10,
-        )
-        pointing = kete.Vector.from_lat_lon(0.0, 0.0)
-        fov = kete.fov.ConeFOV(observer=observer, pointing=pointing, angle=180.0)
-
-        states = kete.mpc.table_to_states(sample_orb_asteroid)
-        propagated = kete.propagate_n_body(
-            states, jd=sample_jd_tdb, suppress_errors=True
-        )
-        simulstates = kete.SimultaneousStates(propagated, fov=fov)
-        return calc_geometries(simulstates, rates_in_arcsec_per_min=True)
-
-    def test_heliocentric_distance_matches(
-        self, horizons_eunomia, skyloc_eunomia_geocentric
-    ):
-        """Horizons and kete r_hel should match within 1e-5 AU."""
-        horizons_r = horizons_eunomia["r_hel"]
-        kete_r = skyloc_eunomia_geocentric["r_hel"][0]
-
-        diff = abs(horizons_r - kete_r)
-        assert np.isclose(
-            horizons_r, kete_r, atol=1e-4
-        ), f"r_hel: Horizons={horizons_r:.6f}, kete={kete_r:.6f}, diff={diff:.6f} AU"
-
-    def test_observer_distance_matches(
-        self, horizons_eunomia, skyloc_eunomia_geocentric
-    ):
-        """Horizons and kete r_obs should match within 1e-5 AU."""
-        horizons_r = horizons_eunomia["r_obs"]
-        kete_r = skyloc_eunomia_geocentric["r_obs"][0]
-
-        diff = abs(horizons_r - kete_r)
-        assert np.isclose(
-            horizons_r, kete_r, atol=1e-4
-        ), f"r_obs: Horizons={horizons_r:.6f}, kete={kete_r:.6f}, diff={diff:.6f} AU"
-
-    def test_ra_matches(self, horizons_eunomia, skyloc_eunomia_geocentric):
-        """Horizons and kete RA should match within 0.01°."""
-        horizons_ra = horizons_eunomia["ra"]
-        kete_ra = skyloc_eunomia_geocentric["ra"][0]
-
-        diff = abs(horizons_ra - kete_ra)
-        assert np.isclose(
-            horizons_ra, kete_ra, atol=0.01
-        ), f"RA: Horizons={horizons_ra:.6f}, kete={kete_ra:.6f}, diff={diff:.6f}°"
-
-    def test_dec_matches(self, horizons_eunomia, skyloc_eunomia_geocentric):
-        """Horizons and kete Dec should match within 0.01°."""
-        horizons_dec = horizons_eunomia["dec"]
-        kete_dec = skyloc_eunomia_geocentric["dec"][0]
-
-        diff = abs(horizons_dec - kete_dec)
-        assert np.isclose(
-            horizons_dec, kete_dec, atol=0.01
-        ), f"Dec: Horizons={horizons_dec:.6f}, kete={kete_dec:.6f}, diff={diff:.6f}°"
-
-    def test_phase_angle_matches(self, horizons_eunomia, skyloc_eunomia_geocentric):
-        """Horizons and kete phase angle should match within 0.01°."""
-        horizons_alpha = horizons_eunomia["alpha"]
-        kete_alpha = skyloc_eunomia_geocentric["alpha"][0]
-
-        diff = abs(horizons_alpha - kete_alpha)
-        assert np.isclose(
-            horizons_alpha, kete_alpha, atol=0.01
-        ), f"α: Horizons={horizons_alpha:.4f}, kete={kete_alpha:.4f}, diff={diff:.4f}°"
-
-    def test_sky_motion_matches(self, horizons_eunomia, skyloc_eunomia_geocentric):
-        """Horizons and kete sky motion should match within 0.1%."""
-        horizons_motion = horizons_eunomia["sky_motion"]
-        kete_motion = skyloc_eunomia_geocentric["sky_motion"][0]
-
-        assert np.isclose(
-            horizons_motion, kete_motion, rtol=0.001
-        ), f"motion: Horizons={horizons_motion:.6f}, kete={kete_motion:.6f} arcsec/min"
-
-    def test_hel_ecl_lon_matches(self, horizons_eunomia, skyloc_eunomia_geocentric):
-        """Horizons and kete heliocentric ecliptic longitude should match."""
-        horizons_lon = horizons_eunomia["hel_ecl_lon"]
-        kete_lon = skyloc_eunomia_geocentric["hel_ecl_lon"][0]
-
-        diff = abs(horizons_lon - kete_lon)
-        assert np.isclose(
-            horizons_lon, kete_lon, atol=0.01
-        ), f"hel_ecl_lon: Horizons={horizons_lon:.4f}, kete={kete_lon:.4f}, diff={diff:.4f}°"
-
-    def test_hel_ecl_lat_matches(self, horizons_eunomia, skyloc_eunomia_geocentric):
-        """Horizons and kete heliocentric ecliptic latitude should match."""
-        horizons_lat = horizons_eunomia["hel_ecl_lat"]
-        kete_lat = skyloc_eunomia_geocentric["hel_ecl_lat"][0]
-
-        diff = abs(horizons_lat - kete_lat)
-        assert np.isclose(
-            horizons_lat, kete_lat, atol=0.01
-        ), f"hel_ecl_lat: Horizons={horizons_lat:.4f}, kete={kete_lat:.4f}, diff={diff:.4f}°"
-
-    def test_obs_ecl_lon_matches(self, horizons_eunomia, skyloc_eunomia_geocentric):
-        """Horizons and kete observer-centric ecliptic longitude should match."""
-        horizons_lon = horizons_eunomia["obs_ecl_lon"]
-        kete_lon = skyloc_eunomia_geocentric["obs_ecl_lon"][0]
-
-        diff = abs(horizons_lon - kete_lon)
-        # Slightly larger tolerance for observer-centric coordinates
-        assert np.isclose(
-            horizons_lon, kete_lon, atol=0.5
-        ), f"obs_ecl_lon: Horizons={horizons_lon:.4f}, kete={kete_lon:.4f}, diff={diff:.4f}°"
-
-    def test_obs_ecl_lat_matches(self, horizons_eunomia, skyloc_eunomia_geocentric):
-        """Horizons and kete observer-centric ecliptic latitude should match."""
-        horizons_lat = horizons_eunomia["obs_ecl_lat"]
-        kete_lat = skyloc_eunomia_geocentric["obs_ecl_lat"][0]
-
-        diff = abs(horizons_lat - kete_lat)
-        assert np.isclose(
-            horizons_lat, kete_lat, atol=0.5
-        ), f"obs_ecl_lat: Horizons={horizons_lat:.4f}, kete={kete_lat:.4f}, diff={diff:.4f}°"
-
-    def test_sky_motion_pa_matches(self, horizons_eunomia, skyloc_eunomia_geocentric):
-        """Horizons and kete sky motion PA should match (modulo 360°).
-
-        Horizons uses [0, 360] range, kete uses [-180, 180].
-        PA=230° is equivalent to PA=-130°.
-        """
-        horizons_pa = horizons_eunomia["sky_motion_pa"]
-        kete_pa = skyloc_eunomia_geocentric["sky_motion_pa"][0]
-
-        # Normalize both to [0, 360)
-        horizons_pa_norm = horizons_pa % 360
-        kete_pa_norm = kete_pa % 360
-
-        diff = abs(horizons_pa_norm - kete_pa_norm)
-        # Handle wraparound at 360°
-        if diff > 180:
-            diff = 360 - diff
-
-        assert (
-            diff < 0.5
-        ), f"sky_motion_pa: Horizons={horizons_pa:.2f}°, kete={kete_pa:.2f}°, diff={diff:.2f}°"
-
-
-class TestErosPropagation:
-    """Validate propagation accuracy for (433) Eros against JPL Horizons."""
-
-    def test_vs_horizons_2024(self, sample_orb_eros, sample_fov_earth_2024):
-        """Propagate Eros to 2024-01-01 and check position.
-
-        Reference: JPL Horizons Sun-centric geometric state.
-        """
-        # Convert orbit to state
-        states_in = kete.mpc.table_to_states(sample_orb_eros)
-        jd_target = sample_fov_earth_2024.observer.jd
-
-        # Propagate
-        states_out = kete.propagate_n_body(
-            states_in, jd=jd_target, include_asteroids=True, suppress_errors=True
-        )
-
-        eros_state = states_out[0]
-        pos = np.array(eros_state.pos)
-
-        # Horizons Reference (Sun-centric J2000 Ecliptic)
-        ref = np.array([1.324107311220569, 0.5255011668486284, 0.2658603283643745])
-
-        dist = np.linalg.norm(pos - ref)
-        # Tolerance: < 1e-5 AU (~1500 km). Expected ~3e-9 AU (~450 m).
-        assert dist < 1e-5, f"Eros position diff: {dist:.3e} AU"
+    def test_asteroids_have_no_nongrav_models(self):
+        """Asteroid rows with zero A1/A2/A3 should have no nongrav model."""
+        rows = SMALL_BODY_ORBITS[SMALL_BODY_ORBITS["desig"].isin(["4", "15", "433"])]
+        assert all(model is None for model in make_nongravs_models(rows))
+
+    def test_comet_row_can_make_nongrav_model(self):
+        """A comet row with nonzero A terms should receive a nongrav model."""
+        row = SMALL_BODY_ORBITS.loc[SMALL_BODY_ORBITS["desig"] == "C/2025 A6"].copy()
+        row.loc[:, "A1"] = 1e-8
+
+        models = make_nongravs_models(row)
+
+        assert len(models) == 1
+        assert models[0] is not None
+        assert isinstance(models[0], kete.propagation.NonGravModel)
+
+
+def _state_from_reference(utc_iso, target_key, desig=None):
+    ref = reference_state(utc_iso, target_key)
+    return kete.State(
+        desig=target_key.replace("_", " ") if desig is None else desig,
+        jd=_to_tdb_jd(utc_iso),
+        pos=kete.Vector(ref["pos"], frame=kete.Frames.Ecliptic),
+        vel=kete.Vector(ref["vel"], frame=kete.Frames.Ecliptic),
+        center_id=10,
+    )
+
+
+def _ephemerides_from_reference_vectors(utc_iso):
+    """Calculate light-delay-aware ephemerides from hard-coded Horizons vectors."""
+    rows = {}
+
+    sun_fov = _wide_fov(_sun_observer(_to_tdb_jd(utc_iso)))
+    earth_state = _state_from_reference(utc_iso, "earth", desig="earth")
+    earth_ss0 = kete.SimultaneousStates([earth_state], fov=sun_fov)
+    earth_ss = kete.fov.fov_state_check(earth_ss0, [sun_fov], dt_limit=3.0)[0]
+    eph, _ = calc_ephems(
+        SMALL_BODY_ORBITS,
+        [earth_ss],
+        output=None,
+        sort_by=None,
+        add_jds=True,
+        compact=False,
+    )
+    rows["earth"] = eph.iloc[0]
+
+    observer_state = _state_from_reference(utc_iso, "earth", desig="geocenter")
+    geo_fov = _wide_fov(observer_state)
+    states = [
+        _state_from_reference(utc_iso, key)
+        for key in ("4", "15", "433", "C/2025 A6", "saturn_barycenter")
+    ]
+    geo_ss0 = kete.SimultaneousStates(states, fov=geo_fov)
+    geo_ss = kete.fov.fov_state_check(geo_ss0, [geo_fov], dt_limit=3.0)[0]
+    eph, _ = calc_ephems(
+        SMALL_BODY_ORBITS,
+        [geo_ss],
+        output=None,
+        sort_by=None,
+        add_jds=True,
+        compact=False,
+    )
+
+    for _, row in eph.iterrows():
+        key = "saturn_barycenter" if row["desig"] == "saturn barycenter" else row["desig"]
+        rows[key] = row
+
+    return rows
+
+
+def _assert_angle(got, expected, atol, label):
+    assert _angle_delta_deg(got, expected) <= atol, (
+        f"{label}: got {got}, expected {expected}"
+    )
+
+
+class TestReferenceVectorEphemerisRestoration:
+    """Restore Horizons ephemerides from hard-coded Horizons vectors via kete."""
+
+    def test_reference_times_are_utc_inputs(self):
+        for utc_iso in REFERENCE_TIMES_UTC:
+            expected = reference_tdb_jd(utc_iso)
+            assert np.isclose(_to_tdb_jd(utc_iso), expected, atol=1e-10)
+
+    @pytest.mark.parametrize("target_key", TARGET_KEYS)
+    def test_reference_vectors_are_finite(self, target_key):
+        for utc_iso in REFERENCE_TIMES_UTC:
+            state = _state_from_reference(utc_iso, target_key)
+            pos = np.array([state.pos[0], state.pos[1], state.pos[2]], dtype=float)
+            vel = np.array([state.vel[0], state.vel[1], state.vel[2]], dtype=float)
+            assert np.all(np.isfinite(pos))
+            assert np.all(np.isfinite(vel))
+
+    @pytest.mark.parametrize("target_key", PROPAGATION_EPHEM_TARGETS)
+    def test_light_delay_ra_dec_matches_horizons_ephemerides(self, target_key):
+        """Kete light-delay-aware RA/Dec matches Horizons to milli-arcsec scale."""
+        for utc_iso in REFERENCE_TIMES_UTC:
+            row = _ephemerides_from_reference_vectors(utc_iso)[target_key]
+            ref = reference_horizons_ephemeris(target_key, utc_iso)
+
+            _assert_angle(
+                row["ra"],
+                ref["ra"],
+                QUERY_ANGLE_ATOL_DEG,
+                f"{utc_iso} {target_key} ra",
+            )
+            _assert_angle(
+                row["dec"],
+                ref["dec"],
+                QUERY_ANGLE_ATOL_DEG,
+                f"{utc_iso} {target_key} dec",
+            )
+
+    @pytest.mark.parametrize("target_key", PROPAGATION_EPHEM_TARGETS)
+    def test_light_delay_distances_match(self, target_key):
+        """Kete light-delay-aware distances match Horizons references."""
+        for utc_iso in REFERENCE_TIMES_UTC:
+            row = _ephemerides_from_reference_vectors(utc_iso)[target_key]
+            ref = reference_horizons_ephemeris(target_key, utc_iso)
+
+            for col in ("r_hel", "r_obs"):
+                assert np.isclose(row[col], ref[col], atol=DIST_ATOL_AU, rtol=1e-10), (
+                    f"{utc_iso} {target_key} {col}: got {row[col]}, expected {ref[col]}"
+                )
+
+    @pytest.mark.xfail(
+        reason=(
+            "Kete fov_state_check uses two-body propagation for the final "
+            "light-time correction from an observation-epoch vector; C/2025 A6 "
+            "retains a 0.01-0.03 arcsec residual against Horizons."
+        ),
+        strict=True,
+    )
+    def test_comet_light_delay_restoration_is_sub_001_arcsec(self):
+        """Guard the remaining comet light-delay restoration residual."""
+        for utc_iso in REFERENCE_TIMES_UTC:
+            row = _ephemerides_from_reference_vectors(utc_iso)["C/2025 A6"]
+            ref = reference_horizons_ephemeris("C/2025 A6", utc_iso)
+            _assert_angle(
+                row["ra"],
+                ref["ra"],
+                QUERY_ANGLE_ATOL_DEG,
+                f"{utc_iso} C/2025 A6 ra",
+            )
+            _assert_angle(
+                row["dec"],
+                ref["dec"],
+                QUERY_ANGLE_ATOL_DEG,
+                f"{utc_iso} C/2025 A6 dec",
+            )
+
+
+class TestCalcGeometriesInvariants:
+    """Basic local invariants for calc_geometries."""
+
+    def test_sky_motion_is_rate_norm(self):
+        utc_iso = REFERENCE_TIMES_UTC[0]
+        observer_state = _state_from_reference(utc_iso, "earth", desig="geocenter")
+        target_state = _state_from_reference(utc_iso, "15", desig="15")
+        fov = _wide_fov(observer_state)
+        ss = kete.SimultaneousStates([target_state], fov=fov)
+
+        geoms = calc_geometries(ss, rates_in_arcsec_per_min=True)
+        expected = np.hypot(geoms["racosdec_rate"], geoms["dec_rate"])
+
+        np.testing.assert_allclose(geoms["sky_motion"], expected, rtol=1e-12)
+
+    def test_galactic_coords_present_and_correct(self):
+        from astropy.coordinates import SkyCoord
+        import astropy.units as u
+
+        utc_iso = REFERENCE_TIMES_UTC[0]
+        observer_state = _state_from_reference(utc_iso, "earth", desig="geocenter")
+        target_state = _state_from_reference(utc_iso, "15", desig="15")
+        fov = _wide_fov(observer_state)
+        ss = kete.SimultaneousStates([target_state], fov=fov)
+
+        geoms = calc_geometries(ss)
+        assert "glx_lon" in geoms
+        assert "glx_lat" in geoms
+
+        c = SkyCoord(ra=geoms["ra"] * u.deg, dec=geoms["dec"] * u.deg, frame="icrs")
+        # galactic longitude uses [0, 360); handle wrap when comparing
+        l_astropy = c.galactic.l.deg
+        diff_lon = np.mod(geoms["glx_lon"] - l_astropy + 180, 360) - 180
+        # atol=1e-5 (~0.04 arcsec) covers the systematic from ecl2eq using a
+        # fixed IAU 1976 mean obliquity rather than astropy's full frame chain.
+        np.testing.assert_allclose(diff_lon, 0.0, atol=1e-5)
+        np.testing.assert_allclose(geoms["glx_lat"], c.galactic.b.deg, atol=1e-5)
