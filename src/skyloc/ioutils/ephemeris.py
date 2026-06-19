@@ -41,7 +41,8 @@ import numpy as np
 import pandas as pd
 import pyarrow.dataset as ds
 
-from pqfilt._operators import apply_filter_operator, validate_operator
+from pqfilt import FilterExpr, filter_df, to_pyarrow_expr
+from pqfilt._operators import validate_operator
 
 __all__ = [
     "EPH_DTYPES_BASE",
@@ -571,11 +572,6 @@ def load_compact_parq_ephem(
         else:
             return (col, op, val)
 
-    def _build_pa_expr(col, op, val):
-        """Build a PyArrow expression from a filter tuple."""
-        validate_operator(op)
-        return apply_filter_operator(op, ds.field(col), val)
-
     # Normalize filters to DNF (list of lists)
     pre_filter_groups = []
     if filters:
@@ -624,7 +620,9 @@ def load_compact_parq_ephem(
     if pre_filter_groups:
         or_exprs = []
         for group in pre_filter_groups:
-            and_exprs = [_build_pa_expr(col, op, val) for col, op, val in group]
+            and_exprs = [to_pyarrow_expr(
+                FilterExpr(col=col, op=op, val=val)
+            ) for col, op, val in group]
             group_expr = and_exprs[0]
             for expr in and_exprs[1:]:
                 group_expr = group_expr & expr
@@ -839,12 +837,9 @@ def filter_ephem(
 
             # Apply filters to concatenated DataFrame
             if filters:
-                mask = pd.Series(True, index=result.index)
-                for col, op, val in filters:
-                    if col not in result.columns:
-                        continue
-                    mask &= apply_filter_operator(op, result[col], val)
-                result = result[mask].reset_index(drop=True)
+                valid = [(col, op, val) for col, op, val in filters if col in result.columns]
+                if valid:
+                    result = filter_df(result, valid)
 
     # Save output if requested
     if output is not None:

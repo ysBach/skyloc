@@ -10,7 +10,7 @@ import sys
 import click
 
 from ..ioutils.ephemeris import filter_ephem
-from pqfilt._parser import parse_expression, FilterExpr, AndExpr, OrExpr
+from pqfilt import parse_expression, FilterExpr, AndExpr, OrExpr
 
 
 def _ast_to_filter_kwargs(node):
